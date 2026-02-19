@@ -431,6 +431,7 @@ function ErrorBanner({ msg, onClose }) {
 export default function App() {
   const [user, setUser] = useState(() => localStorage.getItem('rift_user'));
   const [loggingOut, setLoggingOut] = useState(false);
+  const [loginKey, setLoginKey] = useState(0); // Force remount Login component
   const [transactionsData, setTransactionsData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -449,6 +450,7 @@ export default function App() {
       localStorage.removeItem('rift_user');
       setUser(null);
       setLoggingOut(false);
+      setLoginKey(prev => prev + 1); // Force Login component to remount with fresh state
     }, 200);
   }, []);
 
@@ -456,7 +458,7 @@ export default function App() {
   return (
     <div style={{ height: '100%', width: '100%', background: 'var(--bg)' }}>
       {!user ? (
-        <Login onSuccess={handleLoginSuccess} />
+        <Login key={`login-${loginKey}`} onSuccess={handleLoginSuccess} />
       ) : (
         <>
           {loggingOut && (

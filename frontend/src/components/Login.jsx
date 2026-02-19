@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const API_BASE = 'http://127.0.0.1:8000';
@@ -9,6 +9,13 @@ export default function Login({ onSuccess }) {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
+
+  // Reset form fields when component mounts (e.g., after logout)
+  useEffect(() => {
+    setUsername('');
+    setPassword('');
+    setError(null);
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,6 +30,10 @@ export default function Login({ onSuccess }) {
         localStorage.setItem('rift_user', data.user);
         setLoading(false);
         setRedirecting(true);
+        // Reset form fields immediately after successful login
+        setUsername('');
+        setPassword('');
+        setError(null);
         // Small delay ensures "Redirecting..." renders before state change
         setTimeout(() => {
           onSuccess(data.user);
