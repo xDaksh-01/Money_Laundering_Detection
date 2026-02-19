@@ -14,19 +14,35 @@ function ScoreBadge({ score }) {
     );
 }
 
-function PatternChips({ patterns, highlight }) {
+function PatternChips({ patterns }) {
     if (!patterns?.length) return <span style={{ color: 'var(--t3)' }}>—</span>;
+
+    // Flatten comma-separated backend strings into individual tokens
+    const flat = patterns.flatMap(p => p.split(/,\s*/));
+
     return (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {patterns.map((p, i) => {
-                const isPeel = p === 'peeling_chain';
-                const isHop = p.startsWith('hop_count_');
-                const extraStyle = isPeel
-                    ? { background: 'rgba(199,125,255,0.18)', border: '1px solid rgba(199,125,255,0.4)', color: '#c77dff' }
-                    : isHop
-                        ? { background: 'rgba(255,77,109,0.12)', border: '1px solid rgba(255,77,109,0.35)', color: '#ff4d6d' }
-                        : {};
-                return <span key={i} className="chip" style={extraStyle}>{p}</span>;
+            {flat.map((p, i) => {
+                const t = p.trim().toLowerCase();
+                const isShell = t.includes('shell');
+                const isPeel = t === 'peeling_chain' || t === 'smurfing';
+                const isCycle = t === 'cycle' || t.startsWith('cycle') || t.startsWith('length_');
+                const isHop = t.startsWith('hop_count_') || t.startsWith('hops_');
+                const isConsol = t.includes('consolidation');
+
+                const style = isShell ? {
+                    background: 'rgba(208,0,255,0.14)', border: '1px solid rgba(208,0,255,0.4)', color: '#D000FF', fontWeight: 700,
+                } : isPeel ? {
+                    background: 'rgba(255,140,0,0.14)', border: '1px solid rgba(255,140,0,0.4)', color: '#FF8C00', fontWeight: 700,
+                } : isCycle ? {
+                    background: 'rgba(0,229,255,0.10)', border: '1px solid rgba(0,229,255,0.35)', color: '#00E5FF', fontWeight: 700,
+                } : isHop ? {
+                    background: 'rgba(255,49,49,0.12)', border: '1px solid rgba(255,49,49,0.38)', color: '#FF3131', fontWeight: 700,
+                } : isConsol ? {
+                    background: 'rgba(255,0,0,0.12)', border: '1px solid rgba(255,0,0,0.4)', color: '#FF0000', fontWeight: 700,
+                } : {};
+
+                return <span key={i} className="chip" style={{ ...style, fontSize: '9.5px', padding: '3px 8px' }}>{p.trim()}</span>;
             })}
         </div>
     );
@@ -35,9 +51,17 @@ function PatternChips({ patterns, highlight }) {
 const COLS = [
     { key: 'account_id', label: 'Account ID' },
     { key: 'suspicion_score', label: 'Score' },
+    { key: 'role', label: 'Role' },
     { key: 'ring_id', label: 'Ring ID' },
     { key: 'detected_patterns', label: 'Detected Patterns', noSort: true },
 ];
+
+// Traffic light dot for the Role column
+const ROLE_DOT = {
+    source: { bg: '#00FF00', label: 'Source' },
+    layer: { bg: '#FFFF00', label: 'Layer' },
+    collector: { bg: '#FF0000', label: 'Collector' },
+};
 
 export default function FraudTable({ accounts, hopMap = {} }) {
     const [q, setQ] = useState('');
@@ -121,6 +145,17 @@ export default function FraudTable({ accounts, hopMap = {} }) {
                                 </td>
                                 <td><ScoreBadge score={a.suspicion_score} /></td>
                                 <td>
+                                    {(() => {
+                                        const r = ROLE_DOT[a.role] || ROLE_DOT.layer;
+                                        return (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: r.bg, boxShadow: `0 0 6px ${r.bg}`, flexShrink: 0 }} />
+                                                <span style={{ fontSize: 11, fontWeight: 600, color: r.bg }}>{r.label}</span>
+                                            </span>
+                                        );
+                                    })()}
+                                </td>
+                                <td>
                                     <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--t2)' }}>
                                         {a.ring_id || '—'}
                                     </span>
@@ -131,12 +166,11 @@ export default function FraudTable({ accounts, hopMap = {} }) {
                                             const base = a.detected_patterns || [];
                                             const hops = hopMap[a.account_id];
                                             if (!hops?.length) return base;
-                                            // Find the first smurfing (peeling chain) hop entry
                                             const peel = hops.find(h => h.isPeel);
                                             if (!peel) return base;
-                                            // Inject forensic strings if not already present
                                             const augmented = [...base];
-                                            if (!augmented.includes('peeling_chain')) augmented.push('peeling_chain');
+                                            const chainTag = peel.patternType === 'shell' ? 'shell_chain' : 'peeling_chain';
+                                            if (!augmented.includes(chainTag)) augmented.push(chainTag);
                                             const hopTag = `hop_count_${peel.hopIndex + 1}`;
                                             if (!augmented.some(s => s.startsWith('hop_count_'))) augmented.push(hopTag);
                                             return augmented;
@@ -146,7 +180,7 @@ export default function FraudTable({ accounts, hopMap = {} }) {
                             </tr>
                         ))}
                         {!sorted.length && (
-                            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--t3)', fontSize: 12 }}>
+                            <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--t3)', fontSize: 12 }}>
                                 No matching records
                             </td></tr>
                         )}

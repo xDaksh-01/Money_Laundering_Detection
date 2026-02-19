@@ -7,11 +7,26 @@ import FraudTable from './components/FraudTable';
 import NetworkGraph from './components/NetworkGraph';
 import './App.css';
 
-/* ══════════════════════════════════════════════════════════════
-   HELPERS
-══════════════════════════════════════════════════════════════ */
-const typeColor = (t) =>
-  t === 'cycle' ? 'var(--cyan)' : t === 'smurfing' ? 'var(--amber)' : 'var(--purple)';
+/* Pattern → Neon color  (covers all pattern types from analyzer) */
+const PATTERN_COLORS = {
+  cycle: 'var(--cyan)',                        // #00E5FF electric blue
+  smurfing_fan_in: '#D000FF',                  // purple — many→one aggregator
+  smurfing_fan_out: 'var(--amber)',             // amber  — one→many dispersal
+  layered_shell: '#00FFB3',                    // teal   — linear pass-through chain
+  consolidation: '#FF4DC4',                    // pink   — mule consolidation
+  funnel: '#A8FF3E',                           // lime   — distribute→reconverge  ← NEW
+  // cross-pattern hybrid overlaps
+  'smurfing_fan_in→cycle': '#FF6B35',          // hot orange — bridge ring
+  'smurfing_fan_out→cycle': '#FF6B35',
+  'layered_shell→cycle': '#FF6B35',
+  'smurfing_fan_out→layered_shell': '#FF6B35',
+  'consolidation→cycle': '#FF6B35',            // NEW — funnel feeds a cycle
+  'layered_shell→smurfing_fan_in': '#FF6B35',  // NEW — shell delivers to aggregator
+  // legacy (backwards compat with old CSVs)
+  smurfing: 'var(--amber)',
+  shell: '#00FFB3',
+};
+const typeColor = (t) => PATTERN_COLORS[t] ?? 'var(--purple)';
 
 function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
 function gradientHex(t) {
@@ -218,7 +233,6 @@ function ForensicForecast({ summary, likelyExitCount }) {
    AUDIT PANEL (right column)
 ══════════════════════════════════════════════════════════════ */
 function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount }) {
-  // All rings — zero filtering
   const rings = data?.fraud_rings || [];
   const sum = data?.summary;
 
@@ -262,10 +276,7 @@ function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount }) {
         </div>
       )}
 
-      {/* Forensic Forecast */}
-      {sum && <ForensicForecast summary={sum} likelyExitCount={likelyExitCount} />}
-
-      {/* Node Inspector — appears when a graph node is clicked */}
+      {/* Node Inspector */}
       {nodeSelection && (
         <NodeInspector selection={nodeSelection} onClose={onCloseNode} />
       )}
@@ -286,25 +297,45 @@ function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount }) {
               DETECTED LAUNDERING CHAINS ({rings.length})
             </p>
             {rings.map((ring, i) => {
-              const isPeel = ring.pattern_type === 'smurfing';
-              const color = isPeel ? '#c77dff' : typeColor(ring.pattern_type);
+              const pType = ring.pattern_type;
+              const color = typeColor(pType);
+              const isHybrid = pType.includes('→');
+              // ── CHANGE 1: funnel + consolidation are now "chain-like" for the → icon
+              const isChain = pType.includes('fan_in') || pType.includes('fan_out')
+                || pType.includes('shell') || pType === 'funnel' || pType === 'consolidation';
+              const bridgeCount = ring.bridge_nodes?.length ?? 0;
+
               return (
                 <div key={ring.ring_id} className="ring-item anim-slide"
-                  style={{ animationDelay: `${i * 0.04}s`, opacity: 0, borderColor: `${color}20` }}>
+                  style={{ animationDelay: `${i * 0.04}s`, opacity: 0, borderColor: `${color}22` }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    {/* Ring type badge */}
-                    {isPeel && (
+                    {/* Hybrid badge */}
+                    {isHybrid && (
                       <div style={{
                         display: 'inline-flex', alignItems: 'center', gap: 5,
                         fontSize: 9, fontWeight: 700,
                         padding: '1px 6px', borderRadius: 3, marginBottom: 4,
-                        background: 'rgba(199,125,255,0.12)', border: '1px solid rgba(199,125,255,0.3)',
-                        color: '#c77dff', letterSpacing: '0.06em',
+                        background: 'rgba(255,107,53,0.14)', border: '1px solid rgba(255,107,53,0.4)',
+                        color: '#FF6B35', letterSpacing: '0.06em',
                       }}>
-                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#c77dff' }} />
-                        PEELING CHAIN
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#FF6B35' }} />
+                        ⚡ MULTI-PATTERN BRIDGE
                       </div>
                     )}
+                    {/* ── CHANGE 2: funnel gets its own badge ── */}
+                    {pType === 'funnel' && (
+                      <div style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        fontSize: 9, fontWeight: 700,
+                        padding: '1px 6px', borderRadius: 3, marginBottom: 4,
+                        background: 'rgba(168,255,62,0.12)', border: '1px solid rgba(168,255,62,0.35)',
+                        color: '#A8FF3E', letterSpacing: '0.06em',
+                      }}>
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#A8FF3E' }} />
+                        ⬦ FUNNEL PATTERN
+                      </div>
+                    )}
+                    {/* Ring ID */}
                     <div style={{
                       fontFamily: 'monospace', fontSize: 11, fontWeight: 700,
                       color, marginBottom: 4,
@@ -312,23 +343,41 @@ function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount }) {
                     }}>
                       {ring.ring_id}
                     </div>
+                    {/* Meta row */}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span style={{ fontSize: 11, color: 'var(--t2)' }}>
-                        {isPeel ? '→' : '🔗'} {ring.member_accounts?.length ?? 0} {isPeel ? 'hops' : 'wallets'}
+                        {isChain ? '→' : '🔗'}{' '}
+                        {ring.member_accounts?.length ?? 0}{' '}
+                        {isChain ? 'nodes' : 'wallets'}
                       </span>
+                      {/* Pattern type chip */}
                       <span style={{
-                        fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
+                        fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
                         fontFamily: 'monospace',
                         background: `${color}18`, border: `1px solid ${color}30`, color,
+                        maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}>
-                        {isPeel ? 'peeling_chain' : ring.pattern_type}
+                        {pType}
                       </span>
+                      {/* Bridge count */}
+                      {bridgeCount > 0 && (
+                        <span style={{ fontSize: 10, color: '#FF6B35', fontFamily: 'monospace', fontWeight: 700 }}>
+                          {bridgeCount} bridge{bridgeCount > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {/* Risk score */}
                       {ring.risk_score != null && (
                         <span style={{ fontSize: 10, color: 'var(--t3)', fontFamily: 'monospace' }}>
                           risk: {ring.risk_score.toFixed(1)}
                         </span>
                       )}
                     </div>
+                    {/* overlap_with ref */}
+                    {ring.overlap_with && (
+                      <div style={{ fontSize: 9, color: 'var(--t3)', fontFamily: 'monospace', marginTop: 3 }}>
+                        bridges: {ring.overlap_with}
+                      </div>
+                    )}
                   </div>
                   <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth={2}>
                     <polyline points="9 18 15 12 9 6" />
@@ -397,12 +446,20 @@ export default function App() {
 
   const hasData = !!transactionsData;
 
-  // Build hopMap for FraudTable augmentation
-  // Map: accountId → [{ chainId, hopIndex, totalHops, isPeel, ... }]
+  // ── CHANGE 3: CHAIN_TYPES updated with new pattern types ──
+  const CHAIN_TYPES = new Set([
+    'smurfing', 'smurfing_fan_in', 'smurfing_fan_out',
+    'shell', 'layered_shell',
+    'funnel', 'consolidation',                          // NEW
+    'smurfing_fan_in→cycle', 'smurfing_fan_out→cycle',
+    'layered_shell→cycle', 'smurfing_fan_out→layered_shell',
+    'consolidation→cycle', 'layered_shell→smurfing_fan_in', // NEW
+  ]);
+
   const hopMap = useMemo(() => {
     const map = {};
     transactionsData?.fraud_rings?.forEach(ring => {
-      const isPeel = ring.pattern_type === 'smurfing';
+      const isPeel = CHAIN_TYPES.has(ring.pattern_type);
       ring.member_accounts?.forEach((id, idx) => {
         if (!map[id]) map[id] = [];
         map[id].push({
@@ -412,28 +469,29 @@ export default function App() {
           isPeel,
           patternType: ring.pattern_type,
           riskScore: ring.risk_score,
+          isBridge: ring.bridge_nodes?.includes(id) ?? false,
         });
       });
     });
     return map;
   }, [transactionsData]);
 
-  // Forecast: Likely Exit Points (terminal nodes of peeling chains with high in-degree)
+  // ── CHANGE 4: likelyExitCount now covers funnel + consolidation terminals ──
   const likelyExitCount = useMemo(() => {
     if (!transactionsData?.fraud_rings) return 0;
-    // Calculate degree map across all rings
     const inDegree = {};
     transactionsData.fraud_rings.forEach(ring => {
       ring.member_accounts?.forEach((id, idx) => {
         if (idx > 0) inDegree[id] = (inDegree[id] || 0) + 1;
       });
     });
-    // Find terminal nodes of peeling chains
     let count = 0;
     transactionsData.fraud_rings.forEach(ring => {
-      if (ring.pattern_type === 'smurfing' && ring.member_accounts?.length > 0) {
+      const isTerminalRing = ['smurfing', 'shell', 'layered_shell', 'funnel', 'consolidation']
+        .includes(ring.pattern_type);
+      if (isTerminalRing && ring.member_accounts?.length > 0) {
         const terminalId = ring.member_accounts[ring.member_accounts.length - 1];
-        if (inDegree[terminalId] >= 5) count++;
+        if ((inDegree[terminalId] || 0) >= 5) count++;
       }
     });
     return count;
@@ -482,38 +540,13 @@ export default function App() {
             <>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 14, minWidth: 0 }}>
                 {hasData ? (
-                  <>
-                    {/* Filter bar */}
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexShrink: 0, alignItems: 'center' }}>
-                      {['Overview', 'Filter'].map(tab => (
-                        <button key={tab} style={{
-                          padding: '6px 16px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                          background: tab === 'Overview' ? 'rgba(0,229,255,0.1)' : 'rgba(255,255,255,0.04)',
-                          border: `1px solid ${tab === 'Overview' ? 'rgba(0,229,255,0.3)' : 'var(--border)'}`,
-                          color: tab === 'Overview' ? 'var(--cyan)' : 'var(--t2)',
-                        }}>{tab}</button>
-                      ))}
-                      {/* Ring count breakdown */}
-                      <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, fontSize: 11, color: 'var(--t3)', alignItems: 'center' }}>
-                        {Object.entries(
-                          transactionsData.fraud_rings?.reduce((acc, r) => {
-                            acc[r.pattern_type] = (acc[r.pattern_type] || 0) + 1; return acc;
-                          }, {}) || {}
-                        ).map(([p, n]) => (
-                          <span key={p} style={{ color: p === 'smurfing' ? '#c77dff' : p === 'cycle' ? 'var(--cyan)' : 'var(--purple)' }}>
-                            {n} {p === 'smurfing' ? 'peeling chain' : p}{n > 1 ? 's' : ''}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-                      <NetworkGraph
-                        fraudRings={transactionsData.fraud_rings}
-                        suspiciousAccounts={transactionsData.suspicious_accounts}
-                        onNodeSelect={handleNodeSelect}
-                      />
-                    </div>
-                  </>
+                  <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+                    <NetworkGraph
+                      fraudRings={transactionsData.fraud_rings}
+                      suspiciousAccounts={transactionsData.suspicious_accounts}
+                      onNodeSelect={handleNodeSelect}
+                    />
+                  </div>
                 ) : (
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: 'var(--t3)', fontSize: 13 }}>
                     <svg width={36} height={36} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
@@ -546,8 +579,12 @@ export default function App() {
                       { label: 'CSV file uploaded and validated by Daksh', status: 'success' },
                       { label: `Graph constructed — ${transactionsData.summary?.total_accounts_analyzed?.toLocaleString()} accounts analyzed`, status: 'success' },
                       { label: `${transactionsData.summary?.suspicious_accounts_flagged} suspicious accounts flagged`, status: 'warn' },
-                      { label: `${transactionsData.fraud_rings?.filter(r => r.pattern_type === 'smurfing').length || 0} peeling chain(s) detected`, status: 'critical' },
+                      // ── CHANGE 5: audit log counts updated for all pattern types ──
+                      { label: `${transactionsData.fraud_rings?.filter(r => r.pattern_type === 'layered_shell').length || 0} shell chain(s) detected`, status: 'critical' },
                       { label: `${transactionsData.fraud_rings?.filter(r => r.pattern_type === 'cycle').length || 0} cycle ring(s) detected`, status: 'critical' },
+                      { label: `${transactionsData.fraud_rings?.filter(r => r.pattern_type === 'funnel').length || 0} funnel pattern(s) detected`, status: 'critical' },
+                      { label: `${transactionsData.fraud_rings?.filter(r => r.pattern_type === 'consolidation').length || 0} consolidation ring(s) detected`, status: 'warn' },
+                      { label: `${transactionsData.fraud_rings?.filter(r => r.pattern_type.includes('→')).length || 0} cross-pattern bridge(s) detected`, status: 'critical' },
                       { label: `Analysis complete in ${transactionsData.summary?.processing_time_seconds}s`, status: 'success' },
                       ...(transactionsData.summary?.processing_time_seconds < 1 && transactionsData.summary?.total_accounts_analyzed >= 20000
                         ? [{ label: '⚡ High-Performance Mode active — throughput exceeds 20k nodes/sec', status: 'success' }]

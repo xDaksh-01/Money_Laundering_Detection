@@ -2,59 +2,49 @@ import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react'
 import ForceGraph2D from 'react-force-graph-2d';
 
 /* ══════════════════════════════════════════════════════════════
-   CONSTANTS & COLOR HELPERS
+   GREEN / RED only — no yellow
+   Green  = source node (first in ring / backend role==='source')
+   Red    = all other suspicious nodes
 ══════════════════════════════════════════════════════════════ */
-const COLORS = {
-    cycle: '#00e5ff',   // Cyan
-    smurfing: '#ffa52a',   // Amber (node base)
-    fan_in: '#c77dff',   // Purple
-    unknown: '#00e676',   // Green
-    peelStart: '#c77dff',   // Purple (chain start)
-    peelEnd: '#ff4d6d',   // Red   (chain end)
-};
+const GREEN = '#00FF00';
+const RED = '#FF2222';
+const EDGE_COLOR = '#00E5FF';   // Electric Blue particles
 
-function patternColor(pattern) {
-    return COLORS[pattern] || COLORS.unknown;
+/** True when this node is the origin/source of a fraud chain */
+function isSource(n) {
+    if (n.role === 'source') return true;   // backend role wins
+    if (n.role && n.role !== 'source') return false;  // explicit non-source
+    return n.hopIndex === 0;                                  // structural: first in chain
 }
 
-function lerp(a, b, t) { return a + (b - a) * t; }
-
-function hexToRgb(hex) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return [r, g, b];
+function nodeColorFn(n) {
+    return isSource(n) ? GREEN : RED;
 }
 
-function gradientColor(t) {
-    // Purple (#c77dff) → Red (#ff4d6d)
-    const [r1, g1, b1] = hexToRgb('#c77dff');
-    const [r2, g2, b2] = hexToRgb('#ff4d6d');
-    return `rgba(${Math.round(lerp(r1, r2, t))},${Math.round(lerp(g1, g2, t))},${Math.round(lerp(b1, b2, t))},0.8)`;
-}
 
 /* ══════════════════════════════════════════════════════════════
    GRAPH DATA BUILDER
-   - Smurfing rings → PEELING CHAINS: linear paths (no wrap-around edge)
-   - Cycle rings → circular topology (wrap-around included)
-   - Tracks hop index for every node in every chain
 ══════════════════════════════════════════════════════════════ */
 function buildGraph(fraudRings, suspiciousAccounts) {
-    const PRIORITY = { smurfing: 3, cycle: 2, fan_in: 1 };
+    const PRIORITY = { consolidation: 4, shell: 3, smurfing: 2, cycle: 1 };
     const nodeMap = new Map();
     const links = [];
     const scoreMap = {};
-    const hopMap = {};   // accountId → [{ chainId, hopIndex, totalHops, ringObj }]
+    const roleMap = {};
+    const hopMap = {};
 
-    suspiciousAccounts?.forEach(a => { scoreMap[a.account_id] = a.suspicion_score; });
+    // Index scores and roles from backend accounts list
+    suspiciousAccounts?.forEach(a => {
+        scoreMap[a.account_id] = a.suspicion_score ?? 0;
+        if (a.role) roleMap[a.account_id] = a.role;
+    });
 
     fraudRings?.forEach(ring => {
         const pType = ring.pattern_type;
         const pPri = PRIORITY[pType] ?? 0;
         const members = ring.member_accounts || [];
-        const isPeel = pType === 'smurfing';  // treat smurfing as peeling chain
+        const isChain = pType === 'smurfing' || pType === 'shell';
 
-        // Register nodes
         members.forEach((id, idx) => {
             const existing = nodeMap.get(id);
             if (!existing || pPri > (PRIORITY[existing.pattern] ?? 0)) {
@@ -62,45 +52,35 @@ function buildGraph(fraudRings, suspiciousAccounts) {
                     id,
                     pattern: pType,
                     score: scoreMap[id] ?? 0,
-                    isPeelNode: isPeel,
-                    // hop info set below
-                    hopIndex: isPeel ? idx : null,
-                    totalHops: isPeel ? members.length : null,
-                    chainId: isPeel ? ring.ring_id : null,
-                    isChainEnd: isPeel && idx === members.length - 1,
+                    role: roleMap[id] || null,   // null → fallback to score
+                    isPeelNode: isChain,
+                    hopIndex: isChain ? idx : null,
+                    totalHops: isChain ? members.length : null,
+                    chainId: isChain ? ring.ring_id : null,
+                    isChainEnd: isChain && idx === members.length - 1,
                 });
             }
-            // Build hop map (support multi-chain membership)
             if (!hopMap[id]) hopMap[id] = [];
             hopMap[id].push({
                 chainId: ring.ring_id,
                 hopIndex: idx,
                 totalHops: members.length,
-                isPeel,
+                isPeel: isChain,
                 riskScore: ring.risk_score,
                 patternType: pType,
             });
         });
 
-        // Build edges
-        if (isPeel) {
-            // PEELING CHAIN → strict sequential, no wrap-around
+        // Edges: chains are sequential, cycles are circular
+        if (isChain) {
             for (let i = 0; i < members.length - 1; i++) {
-                const s = members[i], t = members[i + 1];
-                const t_pos = i / Math.max(members.length - 2, 1);  // 0 → 1 along chain
                 links.push({
-                    source: s,
-                    target: t,
-                    pattern: pType,
-                    ring_id: ring.ring_id,
-                    isPeel: true,
-                    t_pos,              // gradient position
-                    hopIndex: i,
-                    totalHops: members.length,
+                    source: members[i], target: members[i + 1],
+                    pattern: pType, ring_id: ring.ring_id, isPeel: true,
+                    hopIndex: i, totalHops: members.length,
                 });
             }
         } else {
-            // CYCLE → circular with wrap-around
             for (let i = 0; i < members.length; i++) {
                 const s = members[i], t = members[(i + 1) % members.length];
                 if (s !== t) links.push({ source: s, target: t, pattern: pType, ring_id: ring.ring_id, isPeel: false });
@@ -108,17 +88,9 @@ function buildGraph(fraudRings, suspiciousAccounts) {
         }
     });
 
-    return {
-        nodes: Array.from(nodeMap.values()),
-        links,
-        hopMap,
-    };
+    return { nodes: Array.from(nodeMap.values()), links, hopMap };
 }
 
-/* ══════════════════════════════════════════════════════════════
-   DEGREE MAP — count how many links point to each node
-   Used for Likely Destination heuristic
-══════════════════════════════════════════════════════════════ */
 function buildDegreeMap(links) {
     const inDegree = {};
     links.forEach(l => {
@@ -127,16 +99,6 @@ function buildDegreeMap(links) {
     });
     return inDegree;
 }
-
-/* ══════════════════════════════════════════════════════════════
-   LEGEND CONFIG
-══════════════════════════════════════════════════════════════ */
-const LEGEND_ITEMS = [
-    { color: '#00e5ff', label: 'Cycle Ring' },
-    { color: '#c77dff', label: 'Peeling Chain (start)' },
-    { color: '#ff4d6d', label: 'Peeling Chain (end)' },
-    { color: '#c77dff', label: 'Fan-In / Other' },
-];
 
 /* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
@@ -153,7 +115,7 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
     const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
     const degreeMap = useMemo(() => buildDegreeMap(links), [links]);
 
-    // Resize observer
+    /* ── Responsive sizing ── */
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
@@ -164,29 +126,21 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
         return () => ro.disconnect();
     }, []);
 
-    // Auto-fit
+    /* ── Auto-fit — smaller padding = nodes appear bigger ── */
     useEffect(() => {
-        const t = setTimeout(() => fgRef.current?.zoomToFit(500, 60), 600);
+        const t = setTimeout(() => fgRef.current?.zoomToFit(400, 30), 600);
         return () => clearTimeout(t);
     }, [graphData]);
 
-    // Node click → send hop info to parent
+    /* ── Node click ── */
     const handleNodeClick = useCallback((node) => {
         const hops = hopMap[node.id] || [];
         const inDeg = degreeMap[node.id] || 0;
-        // Mark as likely destination if high in-degree (≥ 5) and end of a peeling chain
         const isLikelyDest = node.isChainEnd && inDeg >= 5;
-        onNodeSelect?.({
-            nodeId: node.id,
-            score: node.score,
-            pattern: node.pattern,
-            hops,
-            inDegree: inDeg,
-            isLikelyDest,
-        });
+        onNodeSelect?.({ nodeId: node.id, score: node.score, pattern: node.pattern, hops, inDegree: inDeg, isLikelyDest });
     }, [hopMap, degreeMap, onNodeSelect]);
 
-    // Empty state
+    /* ── Empty state ── */
     if (!fraudRings?.length) {
         return (
             <div style={{
@@ -202,11 +156,9 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
         );
     }
 
-    // Pattern breakdown
+    /* ── Pattern breakdown for pills ── */
     const patternCounts = {};
     fraudRings.forEach(r => { patternCounts[r.pattern_type] = (patternCounts[r.pattern_type] || 0) + 1; });
-    const peelCount = patternCounts['smurfing'] || 0;
-    const cycleCount = patternCounts['cycle'] || 0;
 
     return (
         <div ref={containerRef} style={{
@@ -214,68 +166,49 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
             border: '1px solid var(--border)', borderRadius: 12,
             overflow: 'hidden', flex: 1, minHeight: 0,
         }}>
-
-            {/* ── Top-left: pattern tags ── */}
-            <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {cycleCount > 0 && (
-                    <span style={pill('#00e5ff')}>{cycleCount} cycle{cycleCount > 1 ? 's' : ''}</span>
-                )}
-                {peelCount > 0 && (
-                    <span style={pill('#c77dff')}>{peelCount} peeling chain{peelCount > 1 ? 's' : ''}</span>
-                )}
-                {Object.entries(patternCounts)
-                    .filter(([p]) => p !== 'cycle' && p !== 'smurfing')
-                    .map(([p, n]) => <span key={p} style={pill(patternColor(p))}>{n} {p}</span>)
-                }
+            {/* ── Top-left: pattern pills (non-interactive) ── */}
+            <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 10, display: 'flex', gap: 6, flexWrap: 'wrap', pointerEvents: 'none' }}>
+                {Object.entries(patternCounts).map(([p, n]) => (
+                    <span key={p} style={pill('#00E5FF')}>{n} {p}{n > 1 ? 's' : ''}</span>
+                ))}
             </div>
 
-            {/* ── Top-right: counts ── */}
+            {/* ── Top-right: node/edge count (non-interactive) ── */}
             <div style={{
                 position: 'absolute', top: 12, right: 12, zIndex: 10,
                 background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)',
                 borderRadius: 6, padding: '4px 10px',
-                fontSize: 11, fontFamily: 'monospace', color: 'var(--cyan)',
+                fontSize: 11, fontFamily: 'monospace', color: '#00E5FF',
+                pointerEvents: 'none',
             }}>
                 {nodes.length} nodes · {links.length} edges
             </div>
 
-            {/* ── Bottom-left: legend ── */}
+            {/* ── Bottom-left: TRAFFIC LIGHT legend (non-interactive) ── */}
             <div style={{
                 position: 'absolute', bottom: 32, left: 12, zIndex: 10,
                 background: 'rgba(8,8,15,0.9)', border: '1px solid var(--border)',
                 borderRadius: 8, padding: '10px 12px', backdropFilter: 'blur(10px)',
+                pointerEvents: 'none',
             }}>
                 <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', letterSpacing: '0.08em', marginBottom: 8 }}>
                     LEGEND
                 </p>
                 {[
-                    { color: '#00e5ff', label: 'Cycle ring node' },
-                    { gradient: true, label: 'Peeling chain (purple→red)' },
-                    { color: '#c77dff', label: 'Fan-In / Other' },
-                ].map(({ color, gradient, label }) => (
+                    { color: GREEN, label: 'Source (origin)' },
+                    { color: RED, label: 'Suspicious node' },
+                ].map(({ color, label }) => (
                     <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                        {gradient ? (
-                            <svg width={10} height={10} style={{ flexShrink: 0 }}>
-                                <defs>
-                                    <linearGradient id="lg" x1="0%" y1="0%" x2="100%" y2="0%">
-                                        <stop offset="0%" stopColor="#c77dff" />
-                                        <stop offset="100%" stopColor="#ff4d6d" />
-                                    </linearGradient>
-                                </defs>
-                                <circle cx="5" cy="5" r="5" fill="url(#lg)" />
-                            </svg>
-                        ) : (
-                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}`, flexShrink: 0 }} />
-                        )}
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, boxShadow: `0 0 8px ${color}`, flexShrink: 0 }} />
                         <span style={{ fontSize: 11, color: 'var(--t2)' }}>{label}</span>
                     </div>
                 ))}
             </div>
 
-            {/* ── Bottom hint ── */}
-            <div style={{ position: 'absolute', bottom: 10, left: 0, right: 0, textAlign: 'center', zIndex: 10 }}>
+            {/* ── Bottom hint (non-interactive) ── */}
+            <div style={{ position: 'absolute', bottom: 10, left: 0, right: 0, textAlign: 'center', zIndex: 10, pointerEvents: 'none' }}>
                 <span style={{ fontSize: 11, color: 'var(--t3)' }}>
-                    Click any node to inspect · Peeling chains use purple→red gradient
+                    Click any node to inspect · Green→Yellow→Red = money flow path
                 </span>
             </div>
 
@@ -288,64 +221,36 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
                 backgroundColor="transparent"
                 onNodeClick={handleNodeClick}
 
-                /* Nodes */
-                nodeRelSize={6}
-                nodeVal={n => Math.max(1.5, (n.score / 100) * 2.5 + 1.5)}
-                nodeColor={n => {
-                    if (n.isPeelNode) {
-                        // Gradient along chain: purple at start, red at end
-                        const t = n.hopIndex != null && n.totalHops > 1
-                            ? n.hopIndex / (n.totalHops - 1)
-                            : 0;
-                        return gradientColor(t);
-                    }
-                    return patternColor(n.pattern);
+                /* ── Nodes: Green = source origin, Red = suspicious ── */
+                nodeRelSize={8}
+                nodeVal={n => {
+                    // All nodes same base size; source nodes slightly smaller (they're origins, not collectors)
+                    return isSource(n) ? 1.2 : 1.5;
                 }}
+                nodeColor={nodeColorFn}
                 nodeLabel={n => {
-                    const base = `${n.id}\nPattern: ${n.pattern || 'unknown'}\nScore: ${n.score}`;
-                    if (n.isPeelNode && n.hopIndex != null) {
-                        return `${base}\n─ Step ${n.hopIndex + 1} of ${n.totalHops} in peeling chain`;
-                    }
-                    return base;
+                    const roleName = isSource(n) ? '🟢 Source (origin)' : '🔴 Suspicious';
+                    const base = `${n.id}\n${roleName}\nPattern: ${n.pattern || 'unknown'}\nScore: ${n.score}`;
+                    return (n.isPeelNode && n.hopIndex != null)
+                        ? `${base}\n─ Step ${n.hopIndex + 1} of ${n.totalHops}`
+                        : base;
                 }}
 
-                /* Links — custom canvas for peeling gradient edges */
-                linkDirectionalArrowLength={5}
-                linkDirectionalArrowRelPos={1}
-                linkDirectionalParticles={l => l.isPeel ? 3 : 2}
-                linkDirectionalParticleWidth={l => l.isPeel ? 2.5 : 2}
-                linkDirectionalParticleColor={l => l.isPeel ? gradientColor(l.t_pos ?? 0.5) : patternColor(l.pattern)}
-                linkWidth={l => l.isPeel ? 2 : 1.5}
-
-                /* Draw gradient for peeling links, solid for others */
-                linkCanvasObjectMode={l => l.isPeel ? 'replace' : undefined}
-                linkCanvasObject={(link, ctx) => {
-                    const s = link.source, t = link.target;
-                    if (typeof s !== 'object' || typeof t !== 'object') return;
-
-                    const t0 = link.t_pos ?? 0.5;
-                    const colorA = gradientColor(t0);
-                    const colorB = gradientColor(Math.min(t0 + 0.15, 1));
-
-                    const grad = ctx.createLinearGradient(s.x, s.y, t.x, t.y);
-                    grad.addColorStop(0, colorA);
-                    grad.addColorStop(1, colorB);
-
-                    ctx.beginPath();
-                    ctx.moveTo(s.x, s.y);
-                    ctx.lineTo(t.x, t.y);
-                    ctx.strokeStyle = grad;
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-                }}
+                /* ── Links: Electric Blue + moving PARTICLES (no arrows) ── */
+                linkColor={() => `${EDGE_COLOR}70`}   // semi-transparent blue base
+                linkWidth={() => 1.5}
+                linkDirectionalParticles={2}
+                linkDirectionalParticleWidth={2.5}
+                linkDirectionalParticleColor={() => EDGE_COLOR}
+                linkDirectionalParticleSpeed={0.006}
 
                 cooldownTicks={120}
-                onEngineStop={() => fgRef.current?.zoomToFit(500, 60)}
+                onEngineStop={() => fgRef.current?.zoomToFit(400, 30)}
 
-                /* Node labels at high zoom only */
+                /* ── Node labels at high zoom only ── */
                 nodeCanvasObjectMode={() => 'after'}
                 nodeCanvasObject={(node, ctx, globalScale) => {
-                    if (globalScale < 2.5) return;
+                    if (globalScale < 2.5 || !isFinite(node.x) || !isFinite(node.y)) return;
                     const fs = Math.max(7, 9 / globalScale);
                     ctx.font = `${fs}px monospace`;
                     ctx.textAlign = 'center';
@@ -358,11 +263,12 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
     );
 }
 
-/* helper: pill badge style */
+/* Pill badge helper */
 function pill(color) {
     return {
         fontSize: 11, fontFamily: 'monospace', fontWeight: 600,
         padding: '3px 9px', borderRadius: 5,
         background: `${color}18`, border: `1px solid ${color}40`, color,
+        pointerEvents: 'none',
     };
 }
