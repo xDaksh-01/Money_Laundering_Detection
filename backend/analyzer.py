@@ -110,54 +110,54 @@ class RiftAnalyzer:
 
     # ───────────────── PASS 1: CYCLES ───────────────── #
 
-        def _detect_cycles(self):
+    def _detect_cycles(self):
 
-            sccs = sorted(nx.strongly_connected_components(self.G), key=len)
+        sccs = sorted(nx.strongly_connected_components(self.G), key=len)
 
-            for scc in sccs:
+        for scc in sccs:
 
-                scc_size = len(scc)
+            scc_size = len(scc)
 
-                if not (CONFIG["CYCLE_MIN"] <= scc_size <= CONFIG["CYCLE_MAX"]):
-                    continue
+            if not (CONFIG["CYCLE_MIN"] <= scc_size <= CONFIG["CYCLE_MAX"]):
+                continue
 
-                sub = self.G.subgraph(scc)
+            sub = self.G.subgraph(scc)
 
-                # Must have exactly N edges for a clean cycle
-                if sub.number_of_edges() != scc_size:
-                    continue
+            # Must have exactly N edges for a clean cycle
+            if sub.number_of_edges() != scc_size:
+                continue
 
-                # Each node must have exactly 1 in and 1 out
-                valid_cycle = True
-                for node in scc:
-                    if sub.in_degree(node) != 1 or sub.out_degree(node) != 1:
-                        valid_cycle = False
-                        break
+            # Each node must have exactly 1 in and 1 out
+            valid_cycle = True
+            for node in scc:
+                if sub.in_degree(node) != 1 or sub.out_degree(node) != 1:
+                    valid_cycle = False
+                    break
 
-                if not valid_cycle:
-                    continue
+            if not valid_cycle:
+                continue
 
-                cycle_nodes = sorted(list(scc))
+            cycle_nodes = sorted(list(scc))
 
-                rid = self._next_rid("CYC")
-                score = 80 + scc_size * 4
+            rid = self._next_rid("CYC")
+            score = 80 + scc_size * 4
 
-                self._register_ring({
-                    "ring_id": rid,
-                    "member_accounts": cycle_nodes,
-                    "pattern_type": "cycle",
-                    "risk_score": score,
-                })
+            self._register_ring({
+                "ring_id": rid,
+                "member_accounts": cycle_nodes,
+                "pattern_type": "cycle",
+                "risk_score": score,
+            })
 
-                for node in cycle_nodes:
-                    self._update_account(
-                        node,
-                        score,
-                        f"cycle_length_{scc_size}",
-                        rid
-                    )
+            for node in cycle_nodes:
+                self._update_account(
+                    node,
+                    score,
+                    f"cycle_length_{scc_size}",
+                    rid
+                )
 
-                self._cycle_members.update(cycle_nodes)
+            self._cycle_members.update(cycle_nodes)
 
 
     # ───────────────── SLIDING WINDOW ───────────────── #
