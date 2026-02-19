@@ -48,10 +48,16 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/process`, fd);
+      const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/process`, fd, {
+        timeout: 120000, // 2 minutes — HF Spaces can cold-start slowly
+      });
       onSuccess(res.data);
     } catch (e) {
-      setError(e.response?.data?.detail || e.message || 'Upload failed. Is the backend running?');
+      if (e.code === 'ECONNABORTED') {
+        setError('Request timed out. The server may be waking up — please try again in 30 seconds.');
+      } else {
+        setError(e.response?.data?.detail || e.message || 'Upload failed. Is the backend running?');
+      }
     } finally {
       setIsLoading(false);
     }
