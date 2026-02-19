@@ -1,5 +1,4 @@
 import React, { useCallback, useState } from 'react';
-import axios from 'axios';
 
 function Icon({ d, size = 16, color = 'currentColor', strokeWidth = 2 }) {
   return (
@@ -46,18 +45,28 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
     setError(null);
     setIsLoading(true);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/process`, fd, {
-        timeout: 120000, // 2 minutes — HF Spaces can cold-start slowly
-      });
-      onSuccess(res.data);
-    } catch (e) {
-      if (e.code === 'ECONNABORTED') {
-        setError('Request timed out. The server may be waking up — please try again in 30 seconds.');
-      } else {
-        setError(e.response?.data?.detail || e.message || 'Upload failed. Is the backend running?');
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+      if (!apiBaseUrl) {
+        throw new Error('API base URL is not configured');
       }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${apiBaseUrl}/analyze`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.message || `Upload failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      onSuccess(data);
+    } catch (e) {
+      setError(e.message || 'Upload failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
