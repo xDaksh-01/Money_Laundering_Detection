@@ -1,0 +1,28 @@
+=========================================
+RIFT 2026: BACKEND STARTUP GUIDE
+Project: Money_Laundering_Detection
+Environment: rift_env
+=========================================
+
+STEP 1: OPEN TERMINAL
+- Open VS Code Terminal or Command Prompt.
+- Ensure you are in the root directory: 
+  cd D:\Coding\Money_Laundering_Detection
+
+STEP 2: ACTIVATE ENVIRONMENT
+- Run this command to "enter" your rift_env:
+  .\rift_env\Scripts\activate
+
+STEP 3: START BACKEND SERVER
+- Run the FastAPI engine with auto-reload:
+  uvicorn backend.main:app --reload
+
+STEP 4: ACCESS TEST INTERFACE
+- Open your browser and go to:
+  http://127.0.0.1:8000/docs
+
+=========================================
+TROUBLESHOOTING:
+- If 'uvicorn' is not recognized: Run 'pip install uvicorn'
+- If Address already in use: uvicorn backend.main:app --reload --port 8001
+=========================================
