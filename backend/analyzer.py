@@ -149,35 +149,44 @@ class RiftAnalyzer:
     #  PASS 1 — CYCLE DETECTION (SCC-based)
     # ──────────────────────────────────────────────────────────────
     def _detect_cycles(self):
-        found = 0
+        """Fast SCC-based cycle detection — O(V+E), no exponential blowup."""
         for scc in nx.strongly_connected_components(self.G):
-            if len(scc) < CONFIG["CYCLE_MIN"] or found >= CONFIG["MAX_CYCLES"]:
-                continue
-            sub = self.G.subgraph(scc)
-            try:
-                for cycle in nx.simple_cycles(sub, length_bound=CONFIG["CYCLE_MAX"]):
-                    if len(cycle) < CONFIG["CYCLE_MIN"] or found >= CONFIG["MAX_CYCLES"]:
-                        break
-                    found += 1
-                    rid = self._next_rid("CYC")
-                    score = min(96.0, 80.0 + len(cycle) * 4)
-                    members = list(dict.fromkeys(cycle))
+            scc_size = len(scc)
 
-                    self._register_ring({
-                        "ring_id": rid,
-                        "member_accounts": members,
-                        "pattern_type": "cycle",
-                        "risk_score": round(score, 2),
-                    })
-                    for i, node in enumerate(members):
-                        role = "source" if i == 0 else "layer"
-                        self._update_account(
-                            node, score,
-                            f"circular_routing, length_{len(members)}",
-                            rid, role,
-                        )
-            except Exception:
+            if not (CONFIG["CYCLE_MIN"] <= scc_size <= CONFIG["CYCLE_MAX"]):
                 continue
+
+            sub = self.G.subgraph(scc)
+
+            # Must have exactly N edges for a clean cycle
+            if sub.number_of_edges() != scc_size:
+                continue
+
+            # Each node must have exactly 1 in and 1 out
+            valid = all(
+                sub.in_degree(n) == 1 and sub.out_degree(n) == 1
+                for n in scc
+            )
+            if not valid:
+                continue
+
+            cycle_nodes = sorted(list(scc))
+            rid = self._next_rid("CYC")
+            score = min(96.0, 80.0 + scc_size * 4)
+
+            self._register_ring({
+                "ring_id": rid,
+                "member_accounts": cycle_nodes,
+                "pattern_type": "cycle",
+                "risk_score": round(score, 2),
+            })
+            for i, node in enumerate(cycle_nodes):
+                role = "source" if i == 0 else "layer"
+                self._update_account(
+                    node, score,
+                    f"circular_routing, length_{scc_size}",
+                    rid, role,
+                )
 
     # ──────────────────────────────────────────────────────────────
     #  PASS 2 — SMURFING FAN-IN (many → one aggregator)
