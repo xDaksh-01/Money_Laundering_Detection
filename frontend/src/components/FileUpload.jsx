@@ -48,7 +48,8 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await axios.post('http://127.0.0.1:8000/api/process', fd);
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8001';
+      const res = await axios.post(`${apiBaseUrl}/api/process`, fd);
       onSuccess(res.data);
     } catch (e) {
       setError(e.response?.data?.detail || e.message || 'Upload failed. Is the backend running?');
