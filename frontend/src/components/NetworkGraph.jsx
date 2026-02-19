@@ -103,10 +103,17 @@ function buildDegreeMap(links) {
 /* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════ */
-export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSelect }) {
+export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSelect, highlightRing }) {
     const fgRef = useRef();
     const containerRef = useRef();
     const [dims, setDims] = useState({ w: 900, h: 500 });
+    const [selectedNodeId, setSelectedNodeId] = useState(null);
+
+    // Set of highlighted node IDs (from selected ring)
+    const highlightedIds = useMemo(() => {
+        if (!highlightRing) return null;
+        return new Set(highlightRing.member_accounts?.map(String) ?? []);
+    }, [highlightRing]);
 
     const { nodes, links, hopMap } = useMemo(
         () => buildGraph(fraudRings, suspiciousAccounts),
@@ -132,12 +139,50 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
         return () => clearTimeout(t);
     }, [graphData]);
 
-    /* ── Node click ── */
+    /* ── Zoom to highlighted ring when selection changes ── */
+    useEffect(() => {
+        if (!highlightedIds || highlightedIds.size === 0 || !fgRef.current) return;
+        // Wait one tick for graph to settle
+        const t = setTimeout(() => {
+            const fg = fgRef.current;
+            const graphNodes = fg.graphData().nodes;
+            const selected = graphNodes.filter(n => highlightedIds.has(String(n.id)) && isFinite(n.x) && isFinite(n.y));
+            if (selected.length === 0) return;
+
+            // Compute centroid
+            const cx = selected.reduce((s, n) => s + n.x, 0) / selected.length;
+            const cy = selected.reduce((s, n) => s + n.y, 0) / selected.length;
+
+            // Compute bounding box to set appropriate zoom
+            const xs = selected.map(n => n.x);
+            const ys = selected.map(n => n.y);
+            const spanX = Math.max(...xs) - Math.min(...xs) || 100;
+            const spanY = Math.max(...ys) - Math.min(...ys) || 100;
+            const fitZoom = Math.min(6, Math.max(1.5, Math.min(dims.w, dims.h) / (Math.max(spanX, spanY) + 80)));
+
+            fg.centerAt(cx, cy, 700);
+            fg.zoom(fitZoom, 700);
+        }, 900);
+        return () => clearTimeout(t);
+    }, [highlightedIds, dims]);
+
+    /* ── Clear node selection when ring focus changes ── */
+    useEffect(() => {
+        setSelectedNodeId(null);
+    }, [highlightedIds]);
+
+    /* ── Node click → highlight + zoom ── */
     const handleNodeClick = useCallback((node) => {
         const hops = hopMap[node.id] || [];
         const inDeg = degreeMap[node.id] || 0;
         const isLikelyDest = node.isChainEnd && inDeg >= 5;
         onNodeSelect?.({ nodeId: node.id, score: node.score, pattern: node.pattern, hops, inDegree: inDeg, isLikelyDest });
+
+        setSelectedNodeId(node.id);
+        if (fgRef.current && isFinite(node.x) && isFinite(node.y)) {
+            fgRef.current.centerAt(node.x, node.y, 600);
+            fgRef.current.zoom(5, 600);
+        }
     }, [hopMap, degreeMap, onNodeSelect]);
 
     /* ── Empty state ── */
@@ -223,11 +268,19 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
 
                 /* ── Nodes: Green = source origin, Red = suspicious ── */
                 nodeRelSize={8}
-                nodeVal={n => {
-                    // All nodes same base size; source nodes slightly smaller (they're origins, not collectors)
-                    return isSource(n) ? 1.2 : 1.5;
+                nodeVal={n => isSource(n) ? 1.2 : 1.5}
+                nodeColor={n => {
+                    const base = nodeColorFn(n);
+                    // Node selected: highlight it, dim everything else
+                    if (selectedNodeId) {
+                        return String(n.id) === String(selectedNodeId) ? base : base + '28';
+                    }
+                    // Ring selected: highlight ring members, dim rest
+                    if (highlightedIds) {
+                        return highlightedIds.has(String(n.id)) ? base : base + '30';
+                    }
+                    return base;
                 }}
-                nodeColor={nodeColorFn}
                 nodeLabel={n => {
                     const roleName = isSource(n) ? '🟢 Source (origin)' : '🔴 Suspicious';
                     const base = `${n.id}\n${roleName}\nPattern: ${n.pattern || 'unknown'}\nScore: ${n.score}`;
@@ -236,29 +289,108 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
                         : base;
                 }}
 
-                /* ── Links: Electric Blue + moving PARTICLES (no arrows) ── */
-                linkColor={() => `${EDGE_COLOR}70`}   // semi-transparent blue base
-                linkWidth={() => 1.5}
-                linkDirectionalParticles={2}
+                /* ── Links: fade non-ring edges when ring is selected ── */
+                linkColor={link => {
+                    if (!highlightedIds) return `${EDGE_COLOR}70`;
+                    const srcIn = highlightedIds.has(String(link.source?.id ?? link.source));
+                    const tgtIn = highlightedIds.has(String(link.target?.id ?? link.target));
+                    return srcIn && tgtIn ? `${EDGE_COLOR}CC` : `${EDGE_COLOR}18`;
+                }}
+                linkWidth={link => {
+                    if (!highlightedIds) return 1.5;
+                    const srcIn = highlightedIds.has(String(link.source?.id ?? link.source));
+                    const tgtIn = highlightedIds.has(String(link.target?.id ?? link.target));
+                    return srcIn && tgtIn ? 2.5 : 0.6;
+                }}
+                linkDirectionalParticles={link => {
+                    if (!highlightedIds) return 2;
+                    const srcIn = highlightedIds.has(String(link.source?.id ?? link.source));
+                    const tgtIn = highlightedIds.has(String(link.target?.id ?? link.target));
+                    return srcIn && tgtIn ? 4 : 0;
+                }}
                 linkDirectionalParticleWidth={2.5}
                 linkDirectionalParticleColor={() => EDGE_COLOR}
                 linkDirectionalParticleSpeed={0.006}
 
                 cooldownTicks={120}
-                onEngineStop={() => fgRef.current?.zoomToFit(400, 30)}
+                onEngineStop={() => !highlightedIds && fgRef.current?.zoomToFit(400, 30)}
+                onBackgroundClick={() => {
+                    setSelectedNodeId(null);
+                    onNodeSelect?.(null);
+                }}
 
-                /* ── Node labels at high zoom only ── */
-                nodeCanvasObjectMode={() => 'after'}
+                /* ── Node canvas: glow for highlighted nodes + labels ── */
+                nodeCanvasObjectMode={() => 'before'}
                 nodeCanvasObject={(node, ctx, globalScale) => {
-                    if (globalScale < 2.5 || !isFinite(node.x) || !isFinite(node.y)) return;
-                    const fs = Math.max(7, 9 / globalScale);
-                    ctx.font = `${fs}px monospace`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'top';
-                    ctx.fillStyle = 'rgba(255,255,255,0.65)';
-                    ctx.fillText(node.id, node.x, node.y + 8);
+                    if (!isFinite(node.x) || !isFinite(node.y)) return;
+                    const color = nodeColorFn(node);
+                    const isHighlighted = highlightedIds?.has(String(node.id));
+                    const isSelected = String(node.id) === String(selectedNodeId);
+                    const radius = 10;
+
+                    /* ── White selection ring for clicked node ── */
+                    if (isSelected) {
+                        // Outer white glow
+                        const grd = ctx.createRadialGradient(node.x, node.y, radius * 0.8, node.x, node.y, radius * 4);
+                        grd.addColorStop(0, 'rgba(255,255,255,0.35)');
+                        grd.addColorStop(0.5, 'rgba(255,255,255,0.10)');
+                        grd.addColorStop(1, 'rgba(255,255,255,0)');
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, radius * 4, 0, Math.PI * 2);
+                        ctx.fillStyle = grd;
+                        ctx.fill();
+
+                        // Solid white ring
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, radius * 1.9, 0, Math.PI * 2);
+                        ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+                        ctx.lineWidth = 2.2;
+                        ctx.stroke();
+
+                        // Second inner ring in node color
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, radius * 1.45, 0, Math.PI * 2);
+                        ctx.strokeStyle = color + 'CC';
+                        ctx.lineWidth = 1.2;
+                        ctx.stroke();
+                    }
+
+                    /* ── Glow halo for highlighted ring nodes ── */
+                    if (isHighlighted && !isSelected) {
+                        // Outer soft glow
+                        const grd = ctx.createRadialGradient(node.x, node.y, radius * 0.5, node.x, node.y, radius * 3);
+                        grd.addColorStop(0, color + 'CC');
+                        grd.addColorStop(0.4, color + '55');
+                        grd.addColorStop(1, color + '00');
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, radius * 3, 0, Math.PI * 2);
+                        ctx.fillStyle = grd;
+                        ctx.fill();
+
+                        // Sharp inner ring
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, radius * 1.4, 0, Math.PI * 2);
+                        ctx.strokeStyle = color + 'DD';
+                        ctx.lineWidth = 1.5;
+                        ctx.stroke();
+                    }
+
+                    /* ── Labels at high zoom, always for selected/highlighted ── */
+                    if (globalScale >= 2.0 || isHighlighted || isSelected) {
+                        const fs = Math.max(6, 9 / globalScale);
+                        ctx.font = `${isSelected ? 'bold' : 'bold'} ${fs}px monospace`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'top';
+                        ctx.fillStyle = isSelected
+                            ? 'rgba(255,255,255,1.0)'
+                            : isHighlighted
+                                ? 'rgba(255,255,255,0.9)'
+                                : 'rgba(255,255,255,0.55)';
+                        ctx.fillText(node.id, node.x, node.y + 10);
+                    }
                 }}
             />
+
         </div>
     );
 }

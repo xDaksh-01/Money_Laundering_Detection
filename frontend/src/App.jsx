@@ -5,6 +5,7 @@ import FileUpload from './components/FileUpload';
 import SummaryCards from './components/SummaryCards';
 import FraudTable from './components/FraudTable';
 import NetworkGraph from './components/NetworkGraph';
+import ChainDetailPanel from './components/ChainDetailPanel';
 import './App.css';
 
 /* Pattern → Neon color  (covers all pattern types from analyzer) */
@@ -232,7 +233,7 @@ function ForensicForecast({ summary, likelyExitCount }) {
 /* ══════════════════════════════════════════════════════════════
    AUDIT PANEL (right column)
 ══════════════════════════════════════════════════════════════ */
-function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount }) {
+function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount, selectedRing, onRingClick }) {
   const rings = data?.fraud_rings || [];
   const sum = data?.summary;
 
@@ -300,14 +301,24 @@ function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount }) {
               const pType = ring.pattern_type;
               const color = typeColor(pType);
               const isHybrid = pType.includes('→');
-              // ── CHANGE 1: funnel + consolidation are now "chain-like" for the → icon
-              const isChain = pType.includes('fan_in') || pType.includes('fan_out')
-                || pType.includes('shell') || pType === 'funnel' || pType === 'consolidation';
+              const isChain = pType.includes('fan_in') || pType.includes('fan_out') || pType.includes('shell');
               const bridgeCount = ring.bridge_nodes?.length ?? 0;
+              const isSelected = selectedRing?.ring_id === ring.ring_id;
 
               return (
-                <div key={ring.ring_id} className="ring-item anim-slide"
-                  style={{ animationDelay: `${i * 0.04}s`, opacity: 0, borderColor: `${color}22` }}>
+                <div
+                  key={ring.ring_id}
+                  className="ring-item anim-slide"
+                  onClick={() => onRingClick(ring)}
+                  style={{
+                    animationDelay: `${i * 0.04}s`, opacity: 0,
+                    borderColor: isSelected ? color : `${color}22`,
+                    background: isSelected ? `${color}12` : undefined,
+                    cursor: 'pointer',
+                    borderLeft: isSelected ? `3px solid ${color}` : undefined,
+                    transition: 'background 0.15s, border-color 0.15s',
+                  }}
+                >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {/* Hybrid badge */}
                     {isHybrid && (
@@ -433,15 +444,24 @@ export default function App() {
   const [error, setError] = useState(null);
   const [active, setActive] = useState('dashboard');
   const [nodeSelection, setNodeSelection] = useState(null);
+  const [selectedRing, setSelectedRing] = useState(null);
 
   const handleSuccess = useCallback((data) => {
     setTransactionsData(data);
     setNodeSelection(null);
+    setSelectedRing(null);
     setError(null);
   }, []);
 
   const handleNodeSelect = useCallback((info) => {
-    setNodeSelection(info);
+    setNodeSelection(info || null);
+  }, []);
+
+  // Click a ring in the Audit Panel → navigate to Forensic Map + highlight
+  const handleRingClick = useCallback((ring) => {
+    setSelectedRing(ring);
+    setNodeSelection(null);
+    setActive('forensic-map');
   }, []);
 
   const hasData = !!transactionsData;
@@ -531,7 +551,7 @@ export default function App() {
                   )}
                 </div>
               </div>
-              <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} />
+              <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} />
             </>
           )}
 
@@ -545,6 +565,7 @@ export default function App() {
                       fraudRings={transactionsData.fraud_rings}
                       suspiciousAccounts={transactionsData.suspicious_accounts}
                       onNodeSelect={handleNodeSelect}
+                      highlightRing={selectedRing}
                     />
                   </div>
                 ) : (
@@ -556,7 +577,17 @@ export default function App() {
                   </div>
                 )}
               </div>
-              <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} />
+              {/* Show ChainDetailPanel when a ring is selected, else AuditPanel */}
+              {selectedRing ? (
+                <ChainDetailPanel
+                  ring={selectedRing}
+                  suspiciousAccounts={transactionsData?.suspicious_accounts}
+                  summary={transactionsData?.summary}
+                  onClose={() => setSelectedRing(null)}
+                />
+              ) : (
+                <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} />
+              )}
             </>
           )}
 

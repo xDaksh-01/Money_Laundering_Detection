@@ -308,3 +308,21 @@ body {
   border-radius: 12px;
   backdrop-filter: blur(20px);
 }
+
+/* ChainDetailPanel slide-in from right */
+@keyframes slideInRight {
+  from {
+    transform: translateX(30px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Ring item selected tap feedback */
+.ring-item:active {
+  transform: scale(0.99);
+}
