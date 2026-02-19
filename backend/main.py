@@ -15,6 +15,10 @@ app.add_middleware(
 
 parser = RIFTDataParser()
 
+@app.get("/")
+async def health():
+    return {"status": "ok"}
+
 @app.post("/api/process", response_model=RiftOutput)
 async def process_data(file: UploadFile = File(...)):
     content = await file.read()

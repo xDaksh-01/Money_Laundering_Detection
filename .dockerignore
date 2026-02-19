@@ -1,0 +1,11 @@
+frontend/
+rift_env/
+venv/
+data/
+.git/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+guide.txt
