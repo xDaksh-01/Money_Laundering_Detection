@@ -437,19 +437,78 @@ export default function App() {
   const [active, setActive] = useState('dashboard');
   const [nodeSelection, setNodeSelection] = useState(null);
 
+  const handleLoginSuccess = useCallback((username) => {
+    // Update user state immediately - React will handle re-render
+    setUser(username);
+  }, []);
+
   const handleLogout = useCallback(() => {
     setLoggingOut(true);
+    // Brief delay for smooth transition
     setTimeout(() => {
       localStorage.removeItem('rift_user');
       setUser(null);
       setLoggingOut(false);
-    }, 350);
+    }, 200);
   }, []);
 
-  if (!user) {
-    return <Login onSuccess={setUser} />;
-  }
+  // Always render a container to prevent black screen during transitions
+  return (
+    <div style={{ height: '100%', width: '100%', background: 'var(--bg)' }}>
+      {!user ? (
+        <Login onSuccess={handleLoginSuccess} />
+      ) : (
+        <>
+          {loggingOut && (
+            <div style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              background: 'rgba(10,10,15,0.95)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              animation: 'appFadeIn 0.15s ease-out',
+            }}>
+              <p style={{ fontSize: 14, color: 'var(--cyan)', fontWeight: 600 }}>Logging out…</p>
+            </div>
+          )}
+          <DashboardApp
+            user={user}
+            transactionsData={transactionsData}
+            setTransactionsData={setTransactionsData}
+            isLoading={isLoading}
+            setIsLoading={setIsLoading}
+            error={error}
+            setError={setError}
+            active={active}
+            setActive={setActive}
+            nodeSelection={nodeSelection}
+            setNodeSelection={setNodeSelection}
+            onLogout={handleLogout}
+            loggingOut={loggingOut}
+          />
+        </>
+      )}
+    </div>
+  );
+}
 
+function DashboardApp({
+  user,
+  transactionsData,
+  setTransactionsData,
+  isLoading,
+  setIsLoading,
+  error,
+  setError,
+  active,
+  setActive,
+  nodeSelection,
+  setNodeSelection,
+  onLogout,
+  loggingOut,
+}) {
   const handleSuccess = useCallback((data) => {
     setTransactionsData(data);
     setNodeSelection(null);
@@ -548,7 +607,7 @@ export default function App() {
       <Sidebar active={active} setActive={setActive} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-        <TopBar title={title} subtitle={subtitle} user={user} onLogout={handleLogout} loggingOut={loggingOut} />
+        <TopBar title={title} subtitle={subtitle} user={user} onLogout={onLogout} loggingOut={loggingOut} />
 
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 

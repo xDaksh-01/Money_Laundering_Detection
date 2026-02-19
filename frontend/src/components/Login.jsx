@@ -23,8 +23,10 @@ export default function Login({ onSuccess }) {
         localStorage.setItem('rift_user', data.user);
         setLoading(false);
         setRedirecting(true);
-        // Brief delay lets the "Redirecting..." UI paint before heavy dashboard mount
-        setTimeout(() => onSuccess(data.user), 400);
+        // Small delay ensures "Redirecting..." renders before state change
+        setTimeout(() => {
+          onSuccess(data.user);
+        }, 100);
       } else {
         setError('Invalid response from server.');
         setLoading(false);
