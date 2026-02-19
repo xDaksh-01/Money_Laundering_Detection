@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function TopBar({ title, subtitle }) {
+export default function TopBar({ title, subtitle, user, onLogout, loggingOut }) {
     return (
         <header style={{
             height: 54,
@@ -44,22 +44,45 @@ export default function TopBar({ title, subtitle }) {
                 {/* Divider */}
                 <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
 
-                {/* Profile */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{
-                        width: 30, height: 30, borderRadius: 7,
-                        background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.25)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth={2}>
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                            <circle cx="12" cy="7" r="4" />
-                        </svg>
+                {/* Profile & Logout */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{
+                            width: 30, height: 30, borderRadius: 7,
+                            background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.25)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                            <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth={2}>
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                                <circle cx="12" cy="7" r="4" />
+                            </svg>
+                        </div>
+                        <div style={{ lineHeight: 1.2 }}>
+                            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--t1)' }}>
+                                {user ? user.charAt(0).toUpperCase() + user.slice(1) : 'User'}
+                            </p>
+                            <p style={{ fontSize: 10, color: 'var(--t3)' }}>Investigator</p>
+                        </div>
                     </div>
-                    <div style={{ lineHeight: 1.2 }}>
-                        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--t1)' }}>Daksh</p>
-                        <p style={{ fontSize: 10, color: 'var(--t3)' }}>Investigator</p>
-                    </div>
+                    {onLogout && (
+                        <button
+                            onClick={onLogout}
+                            disabled={loggingOut}
+                            style={{
+                                padding: '6px 12px',
+                                borderRadius: 6,
+                                border: '1px solid var(--border)',
+                                background: 'transparent',
+                                color: 'var(--t3)',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                cursor: loggingOut ? 'not-allowed' : 'pointer',
+                                opacity: loggingOut ? 0.6 : 1,
+                            }}
+                        >
+                            Logout
+                        </button>
+                    )}
                 </div>
             </div>
         </header>

@@ -1,8 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from .parser import RIFTDataParser
 from .analyzer import RiftAnalyzer
 from .schema import RiftOutput
+from .auth import verify_user
 
 app = FastAPI(title="RIFT 2026 Detection Engine")
 
@@ -14,6 +16,20 @@ app.add_middleware(
 )
 
 parser = RIFTDataParser()
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/login")
+async def login(data: LoginRequest):
+    """Verify credentials. Returns user and token on success."""
+    if verify_user(data.username, data.password):
+        return {"success": True, "user": data.username.strip().lower()}
+    raise HTTPException(status_code=401, detail="Invalid username or password")
+
 
 @app.post("/api/process", response_model=RiftOutput)
 async def process_data(file: UploadFile = File(...)):
