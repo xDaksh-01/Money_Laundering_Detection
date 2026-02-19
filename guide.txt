@@ -1,0 +1,58 @@
+=========================================
+RIFT 2026: STARTUP GUIDE
+Project: Money_Laundering_Detection
+Environment: rift_env
+=========================================
+
+You need TWO terminals open — one for the backend, one for the frontend.
+
+─────────────────────────────────────────
+TERMINAL 1 — BACKEND (FastAPI)
+─────────────────────────────────────────
+
+STEP 1: Navigate to the project root
+  cd D:\Coding\Money_Laundering_Detection
+
+STEP 2: Activate the Python environment
+  .\rift_env\Scripts\activate
+
+STEP 3: Start the backend server
+  python -m uvicorn backend.main:app --reload --port 8000
+
+Backend is live at:  http://127.0.0.1:8000
+API docs at:         http://127.0.0.1:8000/docs
+
+─────────────────────────────────────────
+TERMINAL 2 — FRONTEND (React / Vite)
+─────────────────────────────────────────
+
+STEP 1: Navigate to the frontend folder
+  cd D:\Coding\Money_Laundering_Detection\frontend
+
+STEP 2: Install dependencies (first time only)
+  npm install
+
+STEP 3: Start the dev server
+  npm run dev
+
+Frontend is live at: http://localhost:5173
+
+─────────────────────────────────────────
+TROUBLESHOOTING
+─────────────────────────────────────────
+- uvicorn not recognized:
+    pip install uvicorn
+
+- Port 8000 already in use:
+    python -m uvicorn backend.main:app --reload --port 8001
+
+- npm not recognized:
+    Install Node.js from https://nodejs.org (LTS version)
+
+- Frontend shows "Network Error" after uploading CSV:
+    Make sure the backend is running in Terminal 1 first.
+
+- Analysing spinner never stops:
+    Backend is processing — wait up to 30 sec for large CSVs (10k rows).
+    If it still hangs, restart the backend (Ctrl+C then re-run Step 3).
+=========================================
