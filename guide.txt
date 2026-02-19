@@ -26,3 +26,5 @@ TROUBLESHOOTING:
 - If 'uvicorn' is not recognized: Run 'pip install uvicorn'
 - If Address already in use: uvicorn backend.main:app --reload --port 8001
 =========================================
+
+python -m uvicorn backend.main:app --reload
