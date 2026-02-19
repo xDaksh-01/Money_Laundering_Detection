@@ -45,6 +45,7 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
     setError(null);
     setIsLoading(true);
     try {
+<<<<<<< HEAD
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
       if (!apiBaseUrl) {
         throw new Error('API base URL is not configured');
@@ -65,6 +66,13 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
 
       const data = await response.json();
       onSuccess(data);
+=======
+      const fd = new FormData();
+      fd.append('file', file);
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8001';
+      const res = await axios.post(`${apiBaseUrl}/api/process`, fd);
+      onSuccess(res.data);
+>>>>>>> 73f6cbcdc63a74ee0a3f382d44e23d6c3323fd3b
     } catch (e) {
       setError(e.message || 'Upload failed. Please try again.');
     } finally {
