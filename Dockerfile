@@ -13,8 +13,8 @@ WORKDIR /app
 # Copy everything
 COPY . .
 
-# Install frontend dependencies and build
-RUN cd frontend && npm install && npm run build
+# Build frontend (VITE_API_URL empty = same-origin, no separate backend needed)
+RUN cd frontend && npm install && VITE_API_URL="" npm run build
 
 # Install backend dependencies
 RUN pip install --no-cache-dir -r requirements.txt
