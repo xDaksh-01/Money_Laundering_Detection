@@ -319,7 +319,7 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
                     return srcIn && tgtIn ? 2.5 : 0.6;
                 }}
                 linkDirectionalParticles={link => {
-                    if (!highlightedIds) return 0;  // no particles when nothing selected — big perf win
+                    if (!highlightedIds) return 1;  // always show 1 particle — visible flow at all times
                     const srcIn = highlightedIds.has(String(link.source?.id ?? link.source));
                     const tgtIn = highlightedIds.has(String(link.target?.id ?? link.target));
                     return srcIn && tgtIn ? 4 : 0;
