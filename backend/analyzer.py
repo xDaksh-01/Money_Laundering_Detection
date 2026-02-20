@@ -58,6 +58,23 @@ class RiftAnalyzer:
         self.fraud_rings = []
         self.ring_counter = defaultdict(int)
 
+        # Pre-compute edge amount sums once: (sender, receiver) -> total amount
+        # Used by _register_ring to avoid per-ring full DataFrame scans
+        self._edge_sum = (
+            self.df.groupby(["sender_id", "receiver_id"])["amount"]
+            .sum()
+            .to_dict()
+        )
+
+        # Pre-compute per-account timestamp range for merchant detection
+        # Avoids O(nodes x rows) full scans — uses O(rows) groupby instead
+        _send = self.df.groupby("sender_id")["timestamp"].agg(mn="min", mx="max")
+        _recv = self.df.groupby("receiver_id")["timestamp"].agg(mn="min", mx="max")
+        _send.index.name = "account"
+        _recv.index.name = "account"
+        _combined = pd.concat([_send, _recv]).groupby(level=0).agg({"mn": "min", "mx": "max"})
+        self._acct_span_days = (_combined["mx"] - _combined["mn"]).dt.days
+
         # Detect merchants automatically
         self._merchants = self._identify_merchants()
 
@@ -71,21 +88,15 @@ class RiftAnalyzer:
             in_deg = self._in_deg.get(node, 0)
             out_deg = self._out_deg.get(node, 0)
 
-            txs = self.df[
-                (self.df["sender_id"] == node) |
-                (self.df["receiver_id"] == node)
-            ]
-
-            if txs.empty:
+            # Early exit — skip degree check before hitting span lookup
+            if in_deg < CONFIG["MERCHANT_MIN_IN_DEG"] or out_deg > CONFIG["MERCHANT_MAX_OUT_DEG"]:
                 continue
 
-            span_days = (txs["timestamp"].max() - txs["timestamp"].min()).days
+            # O(1) span lookup from pre-computed Series (no per-node DataFrame scan)
+            if node not in self._acct_span_days.index:
+                continue
 
-            if (
-                in_deg >= CONFIG["MERCHANT_MIN_IN_DEG"]
-                and out_deg <= CONFIG["MERCHANT_MAX_OUT_DEG"]
-                and span_days >= CONFIG["MERCHANT_MIN_SPAN_DAYS"]
-            ):
+            if self._acct_span_days[node] >= CONFIG["MERCHANT_MIN_SPAN_DAYS"]:
                 merchants.add(node)
 
         return merchants
@@ -110,13 +121,16 @@ class RiftAnalyzer:
 
     def _register_ring(self, ring_dict):
         members = ring_dict["member_accounts"]
-        member_set = set(str(m) for m in members)
+        member_set = frozenset(str(m) for m in members)
 
-        mask = (
-            self.df["sender_id"].isin(member_set)
-            & self.df["receiver_id"].isin(member_set)
-        )
-        ring_dict["total_amount"] = round(float(self.df.loc[mask, "amount"].sum()), 2)
+        # O(ring_size²) dict lookups instead of O(rows) DataFrame scan per ring
+        total = 0.0
+        for s in member_set:
+            for r in member_set:
+                if s != r:
+                    total += self._edge_sum.get((s, r), 0.0)
+
+        ring_dict["total_amount"] = round(total, 2)
         ring_dict.setdefault("bridge_nodes", [])
         ring_dict.setdefault("overlap_with", None)
 
