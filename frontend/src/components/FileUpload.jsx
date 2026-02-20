@@ -35,14 +35,13 @@ const SpinnerIcon = () => (
   </svg>
 );
 
-export default function FileUpload({ onSuccess, isLoading, setIsLoading, setError }) {
+export default function FileUpload({ onSuccess, isLoading, setIsLoading, setError, uploadedFileName, onFileNameChange }) {
   const [dragOver, setDragOver] = useState(false);
-  const [fileName, setFileName] = useState(null);
 
   const upload = useCallback(async (file) => {
     if (!file) return;
     if (!file.name.endsWith('.csv')) { setError('Only CSV files are accepted.'); return; }
-    setFileName(file.name);
+    onFileNameChange?.(file.name);
     setError(null);
     setIsLoading(true);
     try {
@@ -89,11 +88,11 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
         <>
           <SpinnerIcon />
           <div>
-            <p style={{ color: 'var(--cyan)', fontWeight: 600, fontSize: 14 }}>Analyzing {fileName}</p>
+            <p style={{ color: 'var(--cyan)', fontWeight: 600, fontSize: 14 }}>Analyzing {uploadedFileName}</p>
             <p style={{ color: 'var(--t2)', fontSize: 12, marginTop: 4 }}>RIFT graph engine running…</p>
           </div>
         </>
-      ) : fileName ? (
+      ) : uploadedFileName ? (
         <>
           <div style={{
             width: 52, height: 52, borderRadius: '50%',
@@ -104,7 +103,7 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
           </div>
           <div>
             <p style={{ color: 'var(--green)', fontWeight: 600, fontSize: 14 }}>File Ready</p>
-            <p style={{ color: 'var(--t2)', fontSize: 11, fontFamily: 'monospace', marginTop: 4 }}>{fileName}</p>
+            <p style={{ color: 'var(--t2)', fontSize: 11, fontFamily: 'monospace', marginTop: 4 }}>{uploadedFileName}</p>
             <p style={{ color: 'var(--t3)', fontSize: 11, marginTop: 6 }}>Click or drop to replace</p>
           </div>
         </>

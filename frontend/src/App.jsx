@@ -478,12 +478,19 @@ export default function App() {
   const [nodeSelection, setNodeSelection] = useState(null);
   const [selectedRing, setSelectedRing] = useState(null);
   const [auditOpen, setAuditOpen] = useState(true);
+  const [uploadedFileName, setUploadedFileName] = useState(null);
+  const [downloadLogs, setDownloadLogs] = useState([]);
+
+  const logDownload = useCallback((ringId) => {
+    setDownloadLogs(prev => [...prev, { label: `${ringId} report downloaded`, time: new Date().toLocaleTimeString() }]);
+  }, []);
 
   const handleSuccess = useCallback((data) => {
     setTransactionsData(data);
     setNodeSelection(null);
     setSelectedRing(null);
     setError(null);
+    setDownloadLogs([]);
   }, []);
 
   const handleNodeSelect = useCallback((info) => {
@@ -574,7 +581,35 @@ export default function App() {
                 <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <section>
                     <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', letterSpacing: '0.1em', marginBottom: 8 }}>DATA SOURCE</p>
-                    <FileUpload onSuccess={handleSuccess} isLoading={isLoading} setIsLoading={setIsLoading} setError={setError} />
+                    <FileUpload
+                      onSuccess={handleSuccess}
+                      isLoading={isLoading}
+                      setIsLoading={setIsLoading}
+                      setError={setError}
+                      uploadedFileName={uploadedFileName}
+                      onFileNameChange={setUploadedFileName}
+                    />
+                    {uploadedFileName && (
+                      <div style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 7,
+                        marginTop: 8, padding: '5px 10px', borderRadius: 6,
+                        background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.2)',
+                        alignSelf: 'flex-start',
+                      }}>
+                        <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth={2}>
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14,2 14,8 20,8" />
+                        </svg>
+                        <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--cyan)' }}>{uploadedFileName}</span>
+                        {hasData && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10,
+                            background: 'rgba(0,230,118,0.12)', border: '1px solid rgba(0,230,118,0.35)',
+                            color: 'var(--green)', letterSpacing: '0.06em', marginLeft: 4,
+                          }}>LOADED</span>
+                        )}
+                      </div>
+                    )}
                   </section>
                   {hasData && (
                     <section>
@@ -618,6 +653,7 @@ export default function App() {
                   fraudRings={transactionsData?.fraud_rings}
                   summary={transactionsData?.summary}
                   onClose={() => setSelectedRing(null)}
+                  onDownloadLog={logDownload}
                 />
               ) : (
                 <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} isOpen={auditOpen} onToggle={() => setAuditOpen(v => !v)} />
@@ -641,7 +677,7 @@ export default function App() {
                 {hasData ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {[
-                      { label: 'CSV file uploaded and validated by Daksh', status: 'success' },
+                      { label: uploadedFileName ? `CSV "${uploadedFileName}" uploaded and validated` : 'CSV file uploaded and validated', status: 'success' },
                       { label: `Graph constructed — ${transactionsData.summary?.total_accounts_analyzed?.toLocaleString()} accounts analyzed`, status: 'success' },
                       { label: `${transactionsData.summary?.suspicious_accounts_flagged} suspicious accounts flagged`, status: 'warn' },
                       // ── CHANGE 5: audit log counts updated for all pattern types ──
@@ -654,6 +690,7 @@ export default function App() {
                       ...(transactionsData.summary?.processing_time_seconds < 1 && transactionsData.summary?.total_accounts_analyzed >= 20000
                         ? [{ label: '⚡ High-Performance Mode active — throughput exceeds 20k nodes/sec', status: 'success' }]
                         : []),
+                      ...downloadLogs.map(dl => ({ label: dl.label, status: 'success', time: dl.time })),
                     ].map((log, i) => {
                       const c = log.status === 'success' ? 'var(--green)' : log.status === 'warn' ? 'var(--amber)' : 'var(--red)';
                       return (
@@ -665,7 +702,7 @@ export default function App() {
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, boxShadow: `0 0 6px ${c}`, flexShrink: 0 }} />
                           <span style={{ flex: 1, fontSize: 12.5, color: 'var(--t1)' }}>{log.label}</span>
                           <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--t3)' }}>
-                            {new Date().toLocaleTimeString()}
+                            {log.time ?? new Date().toLocaleTimeString()}
                           </span>
                         </div>
                       );
@@ -719,6 +756,7 @@ export default function App() {
                             a.href = url; a.download = `${ring.ring_id}_report.json`;
                             document.body.appendChild(a); a.click();
                             document.body.removeChild(a); URL.revokeObjectURL(url);
+                            logDownload(ring.ring_id);
                           }, i * 250);
                         });
                       }}

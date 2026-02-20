@@ -79,7 +79,7 @@ function downloadJSON(suspiciousAccounts, fraudRings, summary) {
 /* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════ */
-export default function ChainDetailPanel({ ring, suspiciousAccounts, fraudRings, summary, onClose }) {
+export default function ChainDetailPanel({ ring, suspiciousAccounts, fraudRings, summary, onClose, onDownloadLog }) {
     if (!ring) return null;
 
     const color = patternColor(ring.pattern_type);
@@ -98,7 +98,8 @@ export default function ChainDetailPanel({ ring, suspiciousAccounts, fraudRings,
 
     const handleDownload = useCallback(() => {
         downloadJSON(suspiciousAccounts, fraudRings, summary);
-    }, [suspiciousAccounts, fraudRings, summary]);
+        onDownloadLog?.(ring.ring_id);
+    }, [suspiciousAccounts, fraudRings, summary, ring, onDownloadLog]);
 
     return (
         <div style={{
