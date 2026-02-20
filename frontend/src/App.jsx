@@ -6,6 +6,7 @@ import SummaryCards from './components/SummaryCards';
 import FraudTable from './components/FraudTable';
 import NetworkGraph from './components/NetworkGraph';
 import ChainDetailPanel from './components/ChainDetailPanel';
+import AnalyticsView from './components/AnalyticsView';
 import './App.css';
 
 /* Pattern → Neon color  (covers all pattern types from analyzer) */
@@ -41,7 +42,8 @@ function gradientHex(t) {
 ══════════════════════════════════════════════════════════════ */
 function NodeInspector({ selection, onClose }) {
   if (!selection) return null;
-  const { nodeId, score, pattern, hops, inDegree, isLikelyDest } = selection;
+  const { nodeId, score, pattern, hops, inDegree, outDegree, isLikelyDest } = selection;
+  const netFlow = (inDegree ?? 0) - (outDegree ?? 0);
 
   // Primary peeling chain hop (if any)
   const peelHop = hops.find(h => h.isPeel);
@@ -97,7 +99,33 @@ function NodeInspector({ selection, onClose }) {
             <p style={{ fontSize: 9, color: 'var(--t3)', letterSpacing: '0.06em', marginBottom: 2 }}>IN-DEGREE</p>
             <p style={{ fontFamily: 'monospace', fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>{inDegree}</p>
           </div>
+          <div>
+            <p style={{ fontSize: 9, color: 'var(--t3)', letterSpacing: '0.06em', marginBottom: 2 }}>OUT-DEGREE</p>
+            <p style={{ fontFamily: 'monospace', fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>{outDegree ?? 0}</p>
+          </div>
         </div>
+
+        {/* Net flow bar */}
+        {(inDegree > 0 || (outDegree ?? 0) > 0) && (() => {
+          const total = (inDegree ?? 0) + (outDegree ?? 0);
+          const inPct = total > 0 ? ((inDegree ?? 0) / total) * 100 : 50;
+          return (
+            <div style={{ marginBottom: 10 }}>
+              <p style={{ fontSize: 9, color: 'var(--t3)', letterSpacing: '0.06em', marginBottom: 5 }}>MONEY FLOW — INTAKE vs OUTGOING</p>
+              <div style={{ display: 'flex', height: 16, borderRadius: 6, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ width: `${inPct}%`, background: 'var(--green)', transition: 'width 0.4s' }} title={`Intake: ${inDegree} txns`} />
+                <div style={{ flex: 1, background: 'var(--red)', opacity: 0.8 }} title={`Outgoing: ${outDegree ?? 0} txns`} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                <span style={{ fontSize: 10, color: 'var(--green)', fontFamily: 'monospace', fontWeight: 700 }}>↓ {inDegree} in</span>
+                <span style={{ fontSize: 10, color: netFlow > 0 ? 'var(--green)' : 'var(--red)', fontFamily: 'monospace', fontWeight: 700 }}>
+                  net {netFlow > 0 ? '+' : ''}{netFlow}
+                </span>
+                <span style={{ fontSize: 10, color: 'var(--red)', fontFamily: 'monospace', fontWeight: 700 }}>{outDegree ?? 0} out ↑</span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Peeling chain hop info */}
         {peelHop && (
@@ -561,6 +589,7 @@ export default function App() {
     'dashboard': ['The Smurfing Hunter', 'Forensics Dashboard'],
     'forensic-map': ['Forensic Map', 'Fraud Ring & Peeling Chain Visualization'],
     'audit-logs': ['Audit Logs', 'Investigation History'],
+    'analytics': ['Analytics', 'Graphical Analysis & Pattern Insights'],
   };
   const [title, subtitle] = VIEW_TITLE[active];
 
@@ -784,6 +813,11 @@ export default function App() {
                 )}
               </div>
             </div>
+          )}
+
+          {/* ── Analytics ── */}
+          {active === 'analytics' && (
+            <AnalyticsView data={transactionsData} />
           )}
 
         </div>

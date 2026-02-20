@@ -100,6 +100,15 @@ function buildDegreeMap(links) {
     return inDegree;
 }
 
+function buildOutDegreeMap(links) {
+    const outDegree = {};
+    links.forEach(l => {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        outDegree[s] = (outDegree[s] || 0) + 1;
+    });
+    return outDegree;
+}
+
 /* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════ */
@@ -136,6 +145,7 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
 
     const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
     const degreeMap = useMemo(() => buildDegreeMap(links), [links]);
+    const outDegreeMap = useMemo(() => buildOutDegreeMap(links), [links]);
 
     /* ── Responsive sizing ── */
     useEffect(() => {
@@ -190,8 +200,9 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
     const handleNodeClick = useCallback((node) => {
         const hops = hopMap[node.id] || [];
         const inDeg = degreeMap[node.id] || 0;
+        const outDeg = outDegreeMap[node.id] || 0;
         const isLikelyDest = node.isChainEnd && inDeg >= 5;
-        onNodeSelect?.({ nodeId: node.id, score: node.score, pattern: node.pattern, hops, inDegree: inDeg, isLikelyDest });
+        onNodeSelect?.({ nodeId: node.id, score: node.score, pattern: node.pattern, hops, inDegree: inDeg, outDegree: outDeg, isLikelyDest });
 
         setSelectedNodeId(node.id);
         if (fgRef.current && isFinite(node.x) && isFinite(node.y)) {
