@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import axios from 'axios';
 
 function Icon({ d, size = 16, color = 'currentColor', strokeWidth = 2 }) {
   return (
@@ -34,47 +35,25 @@ const SpinnerIcon = () => (
   </svg>
 );
 
-export default function FileUpload({ onSuccess, isLoading, setIsLoading, setError }) {
+export default function FileUpload({ onSuccess, isLoading, setIsLoading, setError, uploadedFileName, onFileNameChange }) {
   const [dragOver, setDragOver] = useState(false);
-  const [fileName, setFileName] = useState(null);
 
   const upload = useCallback(async (file) => {
     if (!file) return;
     if (!file.name.endsWith('.csv')) { setError('Only CSV files are accepted.'); return; }
-    setFileName(file.name);
+    onFileNameChange?.(file.name);
     setError(null);
     setIsLoading(true);
     try {
-<<<<<<< HEAD
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      if (!apiBaseUrl) {
-        throw new Error('API base URL is not configured');
-      }
-
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch(`${apiBaseUrl}/analyze`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.message || `Upload failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      onSuccess(data);
-=======
       const fd = new FormData();
       fd.append('file', file);
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8001';
-      const res = await axios.post(`${apiBaseUrl}/api/process`, fd);
+      const base = import.meta.env.VITE_API_URL ?? '';
+      const res = await axios.post(`${base}/api/process`, fd, {
+        timeout: 120000, // 2 min — graph analysis on 10k rows can take a moment
+      });
       onSuccess(res.data);
->>>>>>> 73f6cbcdc63a74ee0a3f382d44e23d6c3323fd3b
     } catch (e) {
-      setError(e.message || 'Upload failed. Please try again.');
+      setError(e.response?.data?.detail || e.message || 'Upload failed. Is the backend running?');
     } finally {
       setIsLoading(false);
     }
@@ -109,11 +88,11 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
         <>
           <SpinnerIcon />
           <div>
-            <p style={{ color: 'var(--cyan)', fontWeight: 600, fontSize: 14 }}>Analyzing…</p>
-            <p style={{ color: 'var(--t2)', fontSize: 12, marginTop: 4 }}>RIFT graph engine running</p>
+            <p style={{ color: 'var(--cyan)', fontWeight: 600, fontSize: 14 }}>Analyzing {uploadedFileName}</p>
+            <p style={{ color: 'var(--t2)', fontSize: 12, marginTop: 4 }}>RIFT graph engine running…</p>
           </div>
         </>
-      ) : fileName ? (
+      ) : uploadedFileName ? (
         <>
           <div style={{
             width: 52, height: 52, borderRadius: '50%',
@@ -124,7 +103,7 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
           </div>
           <div>
             <p style={{ color: 'var(--green)', fontWeight: 600, fontSize: 14 }}>File Ready</p>
-            <p style={{ color: 'var(--t2)', fontSize: 11, fontFamily: 'monospace', marginTop: 4 }}>{fileName}</p>
+            <p style={{ color: 'var(--t2)', fontSize: 11, fontFamily: 'monospace', marginTop: 4 }}>{uploadedFileName}</p>
             <p style={{ color: 'var(--t3)', fontSize: 11, marginTop: 6 }}>Click or drop to replace</p>
           </div>
         </>

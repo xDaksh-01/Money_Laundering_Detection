@@ -6,6 +6,7 @@ import SummaryCards from './components/SummaryCards';
 import FraudTable from './components/FraudTable';
 import NetworkGraph from './components/NetworkGraph';
 import ChainDetailPanel from './components/ChainDetailPanel';
+import AnalyticsView from './components/AnalyticsView';
 import './App.css';
 
 /* Pattern → Neon color  (covers all pattern types from analyzer) */
@@ -41,7 +42,8 @@ function gradientHex(t) {
 ══════════════════════════════════════════════════════════════ */
 function NodeInspector({ selection, onClose }) {
   if (!selection) return null;
-  const { nodeId, score, pattern, hops, inDegree, isLikelyDest } = selection;
+  const { nodeId, score, pattern, hops, inDegree, outDegree, isLikelyDest } = selection;
+  const netFlow = (inDegree ?? 0) - (outDegree ?? 0);
 
   // Primary peeling chain hop (if any)
   const peelHop = hops.find(h => h.isPeel);
@@ -97,7 +99,33 @@ function NodeInspector({ selection, onClose }) {
             <p style={{ fontSize: 9, color: 'var(--t3)', letterSpacing: '0.06em', marginBottom: 2 }}>IN-DEGREE</p>
             <p style={{ fontFamily: 'monospace', fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>{inDegree}</p>
           </div>
+          <div>
+            <p style={{ fontSize: 9, color: 'var(--t3)', letterSpacing: '0.06em', marginBottom: 2 }}>OUT-DEGREE</p>
+            <p style={{ fontFamily: 'monospace', fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>{outDegree ?? 0}</p>
+          </div>
         </div>
+
+        {/* Net flow bar */}
+        {(inDegree > 0 || (outDegree ?? 0) > 0) && (() => {
+          const total = (inDegree ?? 0) + (outDegree ?? 0);
+          const inPct = total > 0 ? ((inDegree ?? 0) / total) * 100 : 50;
+          return (
+            <div style={{ marginBottom: 10 }}>
+              <p style={{ fontSize: 9, color: 'var(--t3)', letterSpacing: '0.06em', marginBottom: 5 }}>MONEY FLOW — INTAKE vs OUTGOING</p>
+              <div style={{ display: 'flex', height: 16, borderRadius: 6, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ width: `${inPct}%`, background: 'var(--green)', transition: 'width 0.4s' }} title={`Intake: ${inDegree} txns`} />
+                <div style={{ flex: 1, background: 'var(--red)', opacity: 0.8 }} title={`Outgoing: ${outDegree ?? 0} txns`} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                <span style={{ fontSize: 10, color: 'var(--green)', fontFamily: 'monospace', fontWeight: 700 }}>↓ {inDegree} in</span>
+                <span style={{ fontSize: 10, color: netFlow > 0 ? 'var(--green)' : 'var(--red)', fontFamily: 'monospace', fontWeight: 700 }}>
+                  net {netFlow > 0 ? '+' : ''}{netFlow}
+                </span>
+                <span style={{ fontSize: 10, color: 'var(--red)', fontFamily: 'monospace', fontWeight: 700 }}>{outDegree ?? 0} out ↑</span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Peeling chain hop info */}
         {peelHop && (
@@ -233,9 +261,36 @@ function ForensicForecast({ summary, likelyExitCount }) {
 /* ══════════════════════════════════════════════════════════════
    AUDIT PANEL (right column)
 ══════════════════════════════════════════════════════════════ */
-function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount, selectedRing, onRingClick }) {
+function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount, selectedRing, onRingClick, isOpen, onToggle }) {
   const rings = data?.fraud_rings || [];
   const sum = data?.summary;
+
+  // ── Collapsed state: thin vertical strip ──
+  if (!isOpen) {
+    return (
+      <div style={{
+        width: 36, minWidth: 36, height: '100%',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        background: 'rgba(8,8,15,0.97)', borderLeft: '1px solid var(--border)',
+        cursor: 'pointer', userSelect: 'none',
+      }} onClick={onToggle} title="Expand Audit Dashboard">
+        <div style={{
+          marginTop: 14, width: 28, height: 28, borderRadius: 6,
+          background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth={2}>
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </div>
+        <span style={{
+          marginTop: 16, fontSize: 9, fontWeight: 700, color: 'var(--t3)',
+          letterSpacing: '0.12em', writingMode: 'vertical-rl',
+          textOrientation: 'mixed', transform: 'rotate(180deg)',
+        }}>AUDIT DASHBOARD</span>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -258,16 +313,21 @@ function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount, selecte
           </svg>
           <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--t1)' }}>Audit Dashboard</span>
         </div>
-        <div style={{
-          width: 26, height: 26, borderRadius: 6, background: 'var(--surface)',
-          border: '1px solid var(--border)', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', cursor: 'pointer',
-        }}>
-          <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="var(--t2)" strokeWidth={2}>
-            <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
-            <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
+        {/* Collapse button */}
+        <button
+          onClick={onToggle}
+          title="Collapse panel"
+          style={{
+            width: 26, height: 26, borderRadius: 6,
+            background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', color: 'var(--t2)',
+          }}
+        >
+          <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <polyline points="9 18 15 12 9 6" />
           </svg>
-        </div>
+        </button>
       </div>
 
       {/* Stat cards */}
@@ -445,12 +505,20 @@ export default function App() {
   const [active, setActive] = useState('dashboard');
   const [nodeSelection, setNodeSelection] = useState(null);
   const [selectedRing, setSelectedRing] = useState(null);
+  const [auditOpen, setAuditOpen] = useState(true);
+  const [uploadedFileName, setUploadedFileName] = useState(null);
+  const [downloadLogs, setDownloadLogs] = useState([]);
+
+  const logDownload = useCallback((ringId) => {
+    setDownloadLogs(prev => [...prev, { label: `${ringId} report downloaded`, time: new Date().toLocaleTimeString() }]);
+  }, []);
 
   const handleSuccess = useCallback((data) => {
     setTransactionsData(data);
     setNodeSelection(null);
     setSelectedRing(null);
     setError(null);
+    setDownloadLogs([]);
   }, []);
 
   const handleNodeSelect = useCallback((info) => {
@@ -521,6 +589,7 @@ export default function App() {
     'dashboard': ['The Smurfing Hunter', 'Forensics Dashboard'],
     'forensic-map': ['Forensic Map', 'Fraud Ring & Peeling Chain Visualization'],
     'audit-logs': ['Audit Logs', 'Investigation History'],
+    'analytics': ['Analytics', 'Graphical Analysis & Pattern Insights'],
   };
   const [title, subtitle] = VIEW_TITLE[active];
 
@@ -541,7 +610,35 @@ export default function App() {
                 <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <section>
                     <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', letterSpacing: '0.1em', marginBottom: 8 }}>DATA SOURCE</p>
-                    <FileUpload onSuccess={handleSuccess} isLoading={isLoading} setIsLoading={setIsLoading} setError={setError} />
+                    <FileUpload
+                      onSuccess={handleSuccess}
+                      isLoading={isLoading}
+                      setIsLoading={setIsLoading}
+                      setError={setError}
+                      uploadedFileName={uploadedFileName}
+                      onFileNameChange={setUploadedFileName}
+                    />
+                    {uploadedFileName && (
+                      <div style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 7,
+                        marginTop: 8, padding: '5px 10px', borderRadius: 6,
+                        background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.2)',
+                        alignSelf: 'flex-start',
+                      }}>
+                        <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth={2}>
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14,2 14,8 20,8" />
+                        </svg>
+                        <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--cyan)' }}>{uploadedFileName}</span>
+                        {hasData && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10,
+                            background: 'rgba(0,230,118,0.12)', border: '1px solid rgba(0,230,118,0.35)',
+                            color: 'var(--green)', letterSpacing: '0.06em', marginLeft: 4,
+                          }}>LOADED</span>
+                        )}
+                      </div>
+                    )}
                   </section>
                   {hasData && (
                     <section>
@@ -551,7 +648,7 @@ export default function App() {
                   )}
                 </div>
               </div>
-              <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} />
+              <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} isOpen={auditOpen} onToggle={() => setAuditOpen(v => !v)} />
             </>
           )}
 
@@ -582,11 +679,13 @@ export default function App() {
                 <ChainDetailPanel
                   ring={selectedRing}
                   suspiciousAccounts={transactionsData?.suspicious_accounts}
+                  fraudRings={transactionsData?.fraud_rings}
                   summary={transactionsData?.summary}
                   onClose={() => setSelectedRing(null)}
+                  onDownloadLog={logDownload}
                 />
               ) : (
-                <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} />
+                <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} isOpen={auditOpen} onToggle={() => setAuditOpen(v => !v)} />
               )}
             </>
           )}
@@ -607,7 +706,7 @@ export default function App() {
                 {hasData ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {[
-                      { label: 'CSV file uploaded and validated by Daksh', status: 'success' },
+                      { label: uploadedFileName ? `CSV "${uploadedFileName}" uploaded and validated` : 'CSV file uploaded and validated', status: 'success' },
                       { label: `Graph constructed — ${transactionsData.summary?.total_accounts_analyzed?.toLocaleString()} accounts analyzed`, status: 'success' },
                       { label: `${transactionsData.summary?.suspicious_accounts_flagged} suspicious accounts flagged`, status: 'warn' },
                       // ── CHANGE 5: audit log counts updated for all pattern types ──
@@ -620,6 +719,7 @@ export default function App() {
                       ...(transactionsData.summary?.processing_time_seconds < 1 && transactionsData.summary?.total_accounts_analyzed >= 20000
                         ? [{ label: '⚡ High-Performance Mode active — throughput exceeds 20k nodes/sec', status: 'success' }]
                         : []),
+                      ...downloadLogs.map(dl => ({ label: dl.label, status: 'success', time: dl.time })),
                     ].map((log, i) => {
                       const c = log.status === 'success' ? 'var(--green)' : log.status === 'warn' ? 'var(--amber)' : 'var(--red)';
                       return (
@@ -631,7 +731,7 @@ export default function App() {
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, boxShadow: `0 0 6px ${c}`, flexShrink: 0 }} />
                           <span style={{ flex: 1, fontSize: 12.5, color: 'var(--t1)' }}>{log.label}</span>
                           <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--t3)' }}>
-                            {new Date().toLocaleTimeString()}
+                            {log.time ?? new Date().toLocaleTimeString()}
                           </span>
                         </div>
                       );
@@ -642,8 +742,82 @@ export default function App() {
                     No log entries yet. Upload a transaction CSV to begin analysis.
                   </p>
                 )}
+
+                {/* ── Bulk Download ── */}
+                {hasData && (
+                  <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', letterSpacing: '0.1em', marginBottom: 10 }}>
+                      EXPORT — {transactionsData.fraud_rings?.length || 0} CHAIN{transactionsData.fraud_rings?.length !== 1 ? 'S' : ''} DETECTED
+                    </p>
+                    <button
+                      onClick={() => {
+                        const rings = transactionsData.fraud_rings || [];
+                        const accounts = transactionsData.suspicious_accounts || [];
+                        const sum = transactionsData.summary;
+                        rings.forEach((ring, i) => {
+                          setTimeout(() => {
+                            const memberSet = new Set(ring.member_accounts);
+                            const payload = {
+                              suspicious_accounts: accounts
+                                .filter(a => memberSet.has(a.account_id))
+                                .map(a => ({
+                                  account_id: a.account_id,
+                                  suspicion_score: a.suspicion_score,
+                                  detected_patterns: a.detected_patterns,
+                                  ring_id: a.ring_id,
+                                })),
+                              fraud_rings: [{
+                                ring_id: ring.ring_id,
+                                member_accounts: ring.member_accounts,
+                                pattern_type: ring.pattern_type,
+                                risk_score: ring.risk_score,
+                              }],
+                              summary: {
+                                total_accounts_analyzed: sum?.total_accounts_analyzed ?? 0,
+                                suspicious_accounts_flagged: accounts.filter(a => memberSet.has(a.account_id)).length,
+                                fraud_rings_detected: 1,
+                                processing_time_seconds: sum?.processing_time_seconds ?? 0,
+                              },
+                            };
+                            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url; a.download = `${ring.ring_id}_report.json`;
+                            document.body.appendChild(a); a.click();
+                            document.body.removeChild(a); URL.revokeObjectURL(url);
+                            logDownload(ring.ring_id);
+                          }, i * 250);
+                        });
+                      }}
+                      style={{
+                        width: '100%', padding: '11px 16px', borderRadius: 8,
+                        background: 'rgba(0,229,255,0.07)', border: '1px solid rgba(0,229,255,0.3)',
+                        color: 'var(--cyan)', fontWeight: 700, fontSize: 12,
+                        cursor: 'pointer', display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', gap: 8, transition: 'background 0.15s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,229,255,0.14)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,229,255,0.07)'}
+                    >
+                      <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      Bulk Download All {transactionsData.fraud_rings?.length} Ring Reports (.json each)
+                    </button>
+                    <p style={{ fontSize: 10, color: 'var(--t3)', marginTop: 6, textAlign: 'center', fontFamily: 'monospace' }}>
+                      Downloads {transactionsData.fraud_rings?.length} separate JSON files — one per detected chain
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
+          )}
+
+          {/* ── Analytics ── */}
+          {active === 'analytics' && (
+            <AnalyticsView data={transactionsData} uploadedFileName={uploadedFileName} />
           )}
 
         </div>

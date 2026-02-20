@@ -1,11 +1,12 @@
 import pandas as pd
 import io
 
+ROW_LIMIT = 100_000   # hard cap — protects Render free-tier RAM (512 MB)
+
 class RIFTDataParser:
     def parse_and_validate(self, csv_content: bytes):
         try:
-            # Efficiently load 10k rows
-            df = pd.read_csv(io.BytesIO(csv_content))
+            df = pd.read_csv(io.BytesIO(csv_content), nrows=ROW_LIMIT)
             
             # Mandatory RIFT Columns & Types
             df['amount'] = pd.to_numeric(df['amount'], errors='coerce')

@@ -38,68 +38,38 @@ function riskLabel(score) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   JSON DOWNLOAD (exactly the spec format from the image)
+   JSON DOWNLOAD — exact required format
 ══════════════════════════════════════════════════════════════ */
-function buildDownloadPayload(ring, suspiciousAccounts, summary) {
-    const memberSet = new Set(ring.member_accounts);
-
-    // Build a lookup of flagged account details
-    const flaggedMap = {};
-    (suspiciousAccounts || [])
-        .filter(a => memberSet.has(a.account_id))
-        .forEach(a => { flaggedMap[a.account_id] = a; });
-
-    // Every ring member gets a full entry — flagged or not
-    const allMemberAccounts = ring.member_accounts.map(id => {
-        const flagged = flaggedMap[id];
-        if (flagged) {
-            return {
-                account_number: id,          // exact ID from input CSV
-                suspicion_score: flagged.suspicion_score,
-                detected_patterns: flagged.detected_patterns,
-                role: flagged.role ?? 'layer',
-                flagged: true,
-                ring_id: ring.ring_id,
-            };
-        }
-        return {
-            account_number: id,              // exact ID from input CSV
-            suspicion_score: null,
-            detected_patterns: [],
-            role: 'unknown',
-            flagged: false,
-            ring_id: ring.ring_id,
-        };
-    }).sort((a, b) => (b.suspicion_score ?? -1) - (a.suspicion_score ?? -1));
-
+function buildDownloadPayload(suspiciousAccounts, fraudRings, summary) {
     return {
-        ring_members: allMemberAccounts,
-        fraud_ring: {
-            ring_id: ring.ring_id,
-            member_account_numbers: ring.member_accounts,   // exact IDs from input CSV
-            pattern_type: ring.pattern_type,
-            risk_score: ring.risk_score,
-            total_amount: ring.total_amount ?? null,
-            bridge_nodes: ring.bridge_nodes ?? [],
-            overlap_with: ring.overlap_with ?? null,
-        },
+        suspicious_accounts: (suspiciousAccounts || []).map(a => ({
+            account_id: a.account_id,
+            suspicion_score: a.suspicion_score,
+            detected_patterns: a.detected_patterns,
+            ring_id: a.ring_id,
+        })),
+        fraud_rings: (fraudRings || []).map(r => ({
+            ring_id: r.ring_id,
+            member_accounts: r.member_accounts,
+            pattern_type: r.pattern_type,
+            risk_score: r.risk_score,
+        })),
         summary: {
             total_accounts_analyzed: summary?.total_accounts_analyzed ?? 0,
-            suspicious_accounts_flagged: Object.keys(flaggedMap).length,
-            total_ring_members: ring.member_accounts.length,
-            fraud_rings_detected: 1,
+            suspicious_accounts_flagged: summary?.suspicious_accounts_flagged ?? 0,
+            fraud_rings_detected: summary?.fraud_rings_detected ?? 0,
             processing_time_seconds: summary?.processing_time_seconds ?? 0,
         },
     };
 }
 
-function downloadJSON(ring, suspiciousAccounts, summary) {
-    const payload = buildDownloadPayload(ring, suspiciousAccounts, summary);
+function downloadJSON(suspiciousAccounts, fraudRings, summary) {
+    const payload = buildDownloadPayload(suspiciousAccounts, fraudRings, summary);
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${ring.ring_id}_report.json`;
+    a.download = `rift_analysis_report.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -109,7 +79,7 @@ function downloadJSON(ring, suspiciousAccounts, summary) {
 /* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════ */
-export default function ChainDetailPanel({ ring, suspiciousAccounts, summary, onClose }) {
+export default function ChainDetailPanel({ ring, suspiciousAccounts, fraudRings, summary, onClose, onDownloadLog }) {
     if (!ring) return null;
 
     const color = patternColor(ring.pattern_type);
@@ -127,8 +97,9 @@ export default function ChainDetailPanel({ ring, suspiciousAccounts, summary, on
     const unknownMembers = ring.member_accounts.filter(id => !knownIds.has(id));
 
     const handleDownload = useCallback(() => {
-        downloadJSON(ring, suspiciousAccounts, summary);
-    }, [ring, suspiciousAccounts, summary]);
+        downloadJSON(suspiciousAccounts, fraudRings, summary);
+        onDownloadLog?.(ring.ring_id);
+    }, [suspiciousAccounts, fraudRings, summary, ring, onDownloadLog]);
 
     return (
         <div style={{
@@ -337,7 +308,7 @@ export default function ChainDetailPanel({ ring, suspiciousAccounts, summary, on
                         <polyline points="7 10 12 15 17 10" />
                         <line x1="12" y1="15" x2="12" y2="3" />
                     </svg>
-                    Download {ring.ring_id}_report.json
+                    Download rift_analysis_report.json
                 </button>
                 <p style={{ fontSize: 10, color: 'var(--t3)', textAlign: 'center', marginTop: 6, fontFamily: 'monospace' }}>
                     RIFT 2026 forensic export format
