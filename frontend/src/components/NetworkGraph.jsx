@@ -103,6 +103,8 @@ function buildDegreeMap(links) {
 /* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════ */
+const NODE_LIMIT = 500;
+
 export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSelect, highlightRing }) {
     const fgRef = useRef();
     const containerRef = useRef();
@@ -115,10 +117,23 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
         return new Set(highlightRing.member_accounts?.map(String) ?? []);
     }, [highlightRing]);
 
-    const { nodes, links, hopMap } = useMemo(
+    const { nodes: allNodes, links: allLinks, hopMap } = useMemo(
         () => buildGraph(fraudRings, suspiciousAccounts),
         [fraudRings, suspiciousAccounts]
     );
+
+    // Cap nodes to prevent browser freeze on large datasets
+    const truncated = allNodes.length > NODE_LIMIT;
+    const nodes = truncated ? allNodes.slice(0, NODE_LIMIT) : allNodes;
+    const nodeIdSet = useMemo(() => new Set(nodes.map(n => n.id)), [nodes]);
+    const links = truncated
+        ? allLinks.filter(l => {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            return nodeIdSet.has(s) && nodeIdSet.has(t);
+          })
+        : allLinks;
+
     const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
     const degreeMap = useMemo(() => buildDegreeMap(links), [links]);
 
@@ -218,15 +233,16 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
                 ))}
             </div>
 
-            {/* ── Top-right: node/edge count (non-interactive) ── */}
+            {/* ── Top-right: node/edge count + truncation warning ── */}
             <div style={{
                 position: 'absolute', top: 12, right: 12, zIndex: 10,
-                background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)',
+                background: 'rgba(0,229,255,0.08)', border: `1px solid ${truncated ? 'rgba(255,165,42,0.5)' : 'rgba(0,229,255,0.2)'}`,
                 borderRadius: 6, padding: '4px 10px',
-                fontSize: 11, fontFamily: 'monospace', color: '#00E5FF',
+                fontSize: 11, fontFamily: 'monospace', color: truncated ? 'var(--amber)' : '#00E5FF',
                 pointerEvents: 'none',
             }}>
                 {nodes.length} nodes · {links.length} edges
+                {truncated && ` (capped from ${allNodes.length})`}
             </div>
 
             {/* ── Bottom-left: TRAFFIC LIGHT legend (non-interactive) ── */}
@@ -303,7 +319,7 @@ export default function NetworkGraph({ fraudRings, suspiciousAccounts, onNodeSel
                     return srcIn && tgtIn ? 2.5 : 0.6;
                 }}
                 linkDirectionalParticles={link => {
-                    if (!highlightedIds) return 2;
+                    if (!highlightedIds) return 0;  // no particles when nothing selected — big perf win
                     const srcIn = highlightedIds.has(String(link.source?.id ?? link.source));
                     const tgtIn = highlightedIds.has(String(link.target?.id ?? link.target));
                     return srcIn && tgtIn ? 4 : 0;
