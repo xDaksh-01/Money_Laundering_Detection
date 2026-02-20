@@ -233,9 +233,36 @@ function ForensicForecast({ summary, likelyExitCount }) {
 /* ══════════════════════════════════════════════════════════════
    AUDIT PANEL (right column)
 ══════════════════════════════════════════════════════════════ */
-function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount, selectedRing, onRingClick }) {
+function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount, selectedRing, onRingClick, isOpen, onToggle }) {
   const rings = data?.fraud_rings || [];
   const sum = data?.summary;
+
+  // ── Collapsed state: thin vertical strip ──
+  if (!isOpen) {
+    return (
+      <div style={{
+        width: 36, minWidth: 36, height: '100%',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        background: 'rgba(8,8,15,0.97)', borderLeft: '1px solid var(--border)',
+        cursor: 'pointer', userSelect: 'none',
+      }} onClick={onToggle} title="Expand Audit Dashboard">
+        <div style={{
+          marginTop: 14, width: 28, height: 28, borderRadius: 6,
+          background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth={2}>
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </div>
+        <span style={{
+          marginTop: 16, fontSize: 9, fontWeight: 700, color: 'var(--t3)',
+          letterSpacing: '0.12em', writingMode: 'vertical-rl',
+          textOrientation: 'mixed', transform: 'rotate(180deg)',
+        }}>AUDIT DASHBOARD</span>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -258,16 +285,21 @@ function AuditPanel({ data, nodeSelection, onCloseNode, likelyExitCount, selecte
           </svg>
           <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--t1)' }}>Audit Dashboard</span>
         </div>
-        <div style={{
-          width: 26, height: 26, borderRadius: 6, background: 'var(--surface)',
-          border: '1px solid var(--border)', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', cursor: 'pointer',
-        }}>
-          <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="var(--t2)" strokeWidth={2}>
-            <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
-            <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
+        {/* Collapse button */}
+        <button
+          onClick={onToggle}
+          title="Collapse panel"
+          style={{
+            width: 26, height: 26, borderRadius: 6,
+            background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', color: 'var(--t2)',
+          }}
+        >
+          <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <polyline points="9 18 15 12 9 6" />
           </svg>
-        </div>
+        </button>
       </div>
 
       {/* Stat cards */}
@@ -445,6 +477,7 @@ export default function App() {
   const [active, setActive] = useState('dashboard');
   const [nodeSelection, setNodeSelection] = useState(null);
   const [selectedRing, setSelectedRing] = useState(null);
+  const [auditOpen, setAuditOpen] = useState(true);
 
   const handleSuccess = useCallback((data) => {
     setTransactionsData(data);
@@ -551,7 +584,7 @@ export default function App() {
                   )}
                 </div>
               </div>
-              <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} />
+              <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} isOpen={auditOpen} onToggle={() => setAuditOpen(v => !v)} />
             </>
           )}
 
@@ -587,7 +620,7 @@ export default function App() {
                   onClose={() => setSelectedRing(null)}
                 />
               ) : (
-                <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} />
+                <AuditPanel data={transactionsData} nodeSelection={nodeSelection} onCloseNode={() => setNodeSelection(null)} likelyExitCount={likelyExitCount} selectedRing={selectedRing} onRingClick={handleRingClick} isOpen={auditOpen} onToggle={() => setAuditOpen(v => !v)} />
               )}
             </>
           )}
@@ -642,6 +675,74 @@ export default function App() {
                   <p style={{ color: 'var(--t2)', fontSize: 13 }}>
                     No log entries yet. Upload a transaction CSV to begin analysis.
                   </p>
+                )}
+
+                {/* ── Bulk Download ── */}
+                {hasData && (
+                  <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', letterSpacing: '0.1em', marginBottom: 10 }}>
+                      EXPORT — {transactionsData.fraud_rings?.length || 0} CHAIN{transactionsData.fraud_rings?.length !== 1 ? 'S' : ''} DETECTED
+                    </p>
+                    <button
+                      onClick={() => {
+                        const rings = transactionsData.fraud_rings || [];
+                        const accounts = transactionsData.suspicious_accounts || [];
+                        const sum = transactionsData.summary;
+                        rings.forEach((ring, i) => {
+                          setTimeout(() => {
+                            const memberSet = new Set(ring.member_accounts);
+                            const payload = {
+                              suspicious_accounts: accounts
+                                .filter(a => memberSet.has(a.account_id))
+                                .map(a => ({
+                                  account_id: a.account_id,
+                                  suspicion_score: a.suspicion_score,
+                                  detected_patterns: a.detected_patterns,
+                                  ring_id: a.ring_id,
+                                })),
+                              fraud_rings: [{
+                                ring_id: ring.ring_id,
+                                member_accounts: ring.member_accounts,
+                                pattern_type: ring.pattern_type,
+                                risk_score: ring.risk_score,
+                              }],
+                              summary: {
+                                total_accounts_analyzed: sum?.total_accounts_analyzed ?? 0,
+                                suspicious_accounts_flagged: accounts.filter(a => memberSet.has(a.account_id)).length,
+                                fraud_rings_detected: 1,
+                                processing_time_seconds: sum?.processing_time_seconds ?? 0,
+                              },
+                            };
+                            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url; a.download = `${ring.ring_id}_report.json`;
+                            document.body.appendChild(a); a.click();
+                            document.body.removeChild(a); URL.revokeObjectURL(url);
+                          }, i * 250);
+                        });
+                      }}
+                      style={{
+                        width: '100%', padding: '11px 16px', borderRadius: 8,
+                        background: 'rgba(0,229,255,0.07)', border: '1px solid rgba(0,229,255,0.3)',
+                        color: 'var(--cyan)', fontWeight: 700, fontSize: 12,
+                        cursor: 'pointer', display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', gap: 8, transition: 'background 0.15s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,229,255,0.14)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,229,255,0.07)'}
+                    >
+                      <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      Bulk Download All {transactionsData.fraud_rings?.length} Ring Reports (.json each)
+                    </button>
+                    <p style={{ fontSize: 10, color: 'var(--t3)', marginTop: 6, textAlign: 'center', fontFamily: 'monospace' }}>
+                      Downloads {transactionsData.fraud_rings?.length} separate JSON files — one per detected chain
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
