@@ -1,23 +1,18 @@
 """
-RIFT 2026 — RiftAnalyzer (hardened production-safe)
+RIFT 2026 — RiftAnalyzer (Final Stable Version)
 
-Four-pass detection engine:
-  1. cycle
-  2. smurfing_fan_in
-  3. smurfing_fan_out
-  4. layered_shell
-
-Includes:
-✓ Merchant protection
-✓ Unique sender enforcement
-✓ Cycle-peer exclusion
-✓ Stable deterministic behavior
+Detection Engine:
+1. cycle (3–6 nodes only)
+2. smurfing_fan_in (10+ within 72h)
+3. smurfing_fan_out (10+ within 72h)
+4. layered_shell (strict 3+ hop relay chains)
 """
 
 import networkx as nx
 import pandas as pd
 import time
 from collections import defaultdict
+
 
 CONFIG = {
     "CYCLE_MIN": 3,
@@ -26,11 +21,6 @@ CONFIG = {
     "SMURF_WINDOW_HOURS": 72,
     "SHELL_MIN_HOPS": 3,
     "SCORE_CAP": 100.0,
-
-    # Merchant protection thresholds
-    "MERCHANT_MIN_IN_DEG": 25,
-    "MERCHANT_MAX_OUT_DEG": 3,
-    "MERCHANT_MIN_SPAN_DAYS": 15,
 }
 
 
@@ -58,51 +48,8 @@ class RiftAnalyzer:
         self.fraud_rings = []
         self.ring_counter = defaultdict(int)
 
-        # Pre-compute edge amount sums once: (sender, receiver) -> total amount
-        # Used by _register_ring to avoid per-ring full DataFrame scans
-        self._edge_sum = (
-            self.df.groupby(["sender_id", "receiver_id"])["amount"]
-            .sum()
-            .to_dict()
-        )
-
-        # Pre-compute per-account timestamp range for merchant detection
-        # Avoids O(nodes x rows) full scans — uses O(rows) groupby instead
-        _send = self.df.groupby("sender_id")["timestamp"].agg(mn="min", mx="max")
-        _recv = self.df.groupby("receiver_id")["timestamp"].agg(mn="min", mx="max")
-        _send.index.name = "account"
-        _recv.index.name = "account"
-        _combined = pd.concat([_send, _recv]).groupby(level=0).agg({"mn": "min", "mx": "max"})
-        self._acct_span_days = (_combined["mx"] - _combined["mn"]).dt.days
-
-        # Detect merchants automatically
-        self._merchants = self._identify_merchants()
-
     # ─────────────────────────────────────────────
-    # Merchant Detection
-    # ─────────────────────────────────────────────
-    def _identify_merchants(self):
-        merchants = set()
-
-        for node in self.G.nodes():
-            in_deg = self._in_deg.get(node, 0)
-            out_deg = self._out_deg.get(node, 0)
-
-            # Early exit — skip degree check before hitting span lookup
-            if in_deg < CONFIG["MERCHANT_MIN_IN_DEG"] or out_deg > CONFIG["MERCHANT_MAX_OUT_DEG"]:
-                continue
-
-            # O(1) span lookup from pre-computed Series (no per-node DataFrame scan)
-            if node not in self._acct_span_days.index:
-                continue
-
-            if self._acct_span_days[node] >= CONFIG["MERCHANT_MIN_SPAN_DAYS"]:
-                merchants.add(node)
-
-        return merchants
-
-    # ─────────────────────────────────────────────
-    # Main Entry
+    # ENTRY
     # ─────────────────────────────────────────────
     def detect_patterns(self):
         start = time.time()
@@ -113,35 +60,28 @@ class RiftAnalyzer:
         return self._format_output(start)
 
     # ─────────────────────────────────────────────
-    # Helpers
+    # HELPERS
     # ─────────────────────────────────────────────
     def _next_rid(self, prefix):
         self.ring_counter[prefix] += 1
         return f"RING_{prefix}_{self.ring_counter[prefix]:03}"
 
     def _register_ring(self, ring_dict):
-        members = ring_dict["member_accounts"]
-        member_set = frozenset(str(m) for m in members)
-
-        # O(ring_size²) dict lookups instead of O(rows) DataFrame scan per ring
-        total = 0.0
-        for s in member_set:
-            for r in member_set:
-                if s != r:
-                    total += self._edge_sum.get((s, r), 0.0)
-
-        ring_dict["total_amount"] = round(total, 2)
+        members = set(str(m) for m in ring_dict["member_accounts"])
+        mask = (
+            self.df["sender_id"].isin(members)
+            & self.df["receiver_id"].isin(members)
+        )
+        ring_dict["total_amount"] = round(
+            float(self.df.loc[mask, "amount"].sum()), 2
+        )
         ring_dict.setdefault("bridge_nodes", [])
         ring_dict.setdefault("overlap_with", None)
-
         self.fraud_rings.append(ring_dict)
 
     def _update_account(self, acc_id, score, pattern, rid, role="layer"):
         acc_id = str(acc_id)
-        score = round(min(float(score), CONFIG["SCORE_CAP"]), 2)
-
-        if acc_id in self._merchants:
-            return  # NEVER flag merchants
+        score = round(min(score, CONFIG["SCORE_CAP"]), 2)
 
         if acc_id not in self.suspicious_accounts:
             self.suspicious_accounts[acc_id] = {
@@ -152,10 +92,12 @@ class RiftAnalyzer:
                 "role": role,
             }
         else:
-            ex = self.suspicious_accounts[acc_id]
-            ex["suspicion_score"] = min(CONFIG["SCORE_CAP"], max(ex["suspicion_score"], score))
-            if pattern not in ex["detected_patterns"]:
-                ex["detected_patterns"].append(pattern)
+            existing = self.suspicious_accounts[acc_id]
+            existing["suspicion_score"] = max(
+                existing["suspicion_score"], score
+            )
+            if pattern not in existing["detected_patterns"]:
+                existing["detected_patterns"].append(pattern)
 
     def _has_dense_window(self, timestamps):
         window = CONFIG["SMURF_WINDOW_HOURS"] * 3600
@@ -171,35 +113,42 @@ class RiftAnalyzer:
         return False
 
     # ─────────────────────────────────────────────
-    # PASS 1 — CYCLE
+    # PASS 1 — CYCLES
     # ─────────────────────────────────────────────
     def _detect_cycles(self):
         for scc in nx.strongly_connected_components(self.G):
-            scc_size = len(scc)
-            if not (CONFIG["CYCLE_MIN"] <= scc_size <= CONFIG["CYCLE_MAX"]):
+            size = len(scc)
+
+            if not (CONFIG["CYCLE_MIN"] <= size <= CONFIG["CYCLE_MAX"]):
                 continue
 
             sub = self.G.subgraph(scc)
-            if sub.number_of_edges() != scc_size:
+
+            if not all(
+                sub.in_degree(n) == 1 and sub.out_degree(n) == 1
+                for n in scc
+            ):
                 continue
 
-            if not all(sub.in_degree(n) == 1 and sub.out_degree(n) == 1 for n in scc):
-                continue
-
-            cycle_nodes = sorted(list(scc))
+            nodes = sorted(list(scc))
             rid = self._next_rid("CYC")
-            score = min(96.0, 80.0 + scc_size * 4)
+            score = min(96.0, 80.0 + size * 4)
 
             self._register_ring({
                 "ring_id": rid,
-                "member_accounts": cycle_nodes,
+                "member_accounts": nodes,
                 "pattern_type": "cycle",
                 "risk_score": round(score, 2),
             })
 
-            for i, node in enumerate(cycle_nodes):
-                role = "source" if i == 0 else "layer"
-                self._update_account(node, score, f"cycle_length_{scc_size}", rid, role)
+            for node in nodes:
+                self._update_account(
+                    node,
+                    score,
+                    f"cycle_length_{size}",
+                    rid,
+                    "layer"
+                )
 
     # ─────────────────────────────────────────────
     # PASS 2 — FAN-IN
@@ -207,11 +156,9 @@ class RiftAnalyzer:
     def _detect_smurfing_fan_in(self):
         for receiver, group in self.df.groupby("receiver_id"):
 
-            if receiver in self._merchants:
-                continue
+            senders = group["sender_id"].unique()
 
-            unique_senders = group["sender_id"].nunique()
-            if unique_senders < CONFIG["SMURF_MIN"]:
+            if len(senders) < CONFIG["SMURF_MIN"]:
                 continue
 
             if not self._has_dense_window(group["timestamp"]):
@@ -219,7 +166,7 @@ class RiftAnalyzer:
 
             rid = self._next_rid("FIN")
             score = 90.0
-            members = list(group["sender_id"].unique()) + [receiver]
+            members = list(senders) + [receiver]
 
             self._register_ring({
                 "ring_id": rid,
@@ -228,8 +175,14 @@ class RiftAnalyzer:
                 "risk_score": score,
             })
 
-            for acc in members:
-                self._update_account(acc, score, "smurfing_fan_in", rid)
+            for s in senders:
+                self._update_account(
+                    s, score * 0.65, "smurfing_fan_in", rid, "source"
+                )
+
+            self._update_account(
+                receiver, score, "smurfing_fan_in", rid, "collector"
+            )
 
     # ─────────────────────────────────────────────
     # PASS 3 — FAN-OUT
@@ -237,11 +190,9 @@ class RiftAnalyzer:
     def _detect_smurfing_fan_out(self):
         for sender, group in self.df.groupby("sender_id"):
 
-            if sender in self._merchants:
-                continue
+            receivers = group["receiver_id"].unique()
 
-            unique_receivers = group["receiver_id"].nunique()
-            if unique_receivers < CONFIG["SMURF_MIN"]:
+            if len(receivers) < CONFIG["SMURF_MIN"]:
                 continue
 
             if not self._has_dense_window(group["timestamp"]):
@@ -249,7 +200,7 @@ class RiftAnalyzer:
 
             rid = self._next_rid("FOUT")
             score = 90.0
-            members = [sender] + list(group["receiver_id"].unique())
+            members = [sender] + list(receivers)
 
             self._register_ring({
                 "ring_id": rid,
@@ -258,37 +209,72 @@ class RiftAnalyzer:
                 "risk_score": score,
             })
 
-            for acc in members:
-                self._update_account(acc, score, "smurfing_fan_out", rid)
+            self._update_account(
+                sender, score, "smurfing_fan_out", rid, "source"
+            )
+
+            for r in receivers:
+                self._update_account(
+                    r, score * 0.7, "smurfing_fan_out", rid, "layer"
+                )
 
     # ─────────────────────────────────────────────
-    # PASS 4 — SHELL CHAINS
+    # PASS 4 — STRICT LAYERED SHELL CHAINS
     # ─────────────────────────────────────────────
     def _detect_shell_networks(self):
+
         visited = set()
 
+        # Precompute transaction counts per account
+        tx_counts = defaultdict(int)
+        for sender, receiver in zip(self.df["sender_id"], self.df["receiver_id"]):
+            tx_counts[sender] += 1
+            tx_counts[receiver] += 1
+
         for node in self.G.nodes():
+
             if node in visited:
                 continue
-            if self._in_deg.get(node, 0) > 1 or self._out_deg.get(node, 0) != 1:
+
+            # Start must have exactly 1 outgoing edge
+            if self._out_deg.get(node, 0) != 1:
                 continue
 
             chain = [node]
             curr = node
 
-            while len(chain) < 50:
-                succs = list(self.G.successors(curr))
-                if len(succs) != 1:
-                    break
-                nxt = succs[0]
-                if nxt in chain:
-                    break
-                chain.append(nxt)
-                curr = nxt
-                if self._out_deg.get(nxt, 0) == 0:
+            while True:
+
+                successors = list(self.G.successors(curr))
+
+                if len(successors) != 1:
                     break
 
+                nxt = successors[0]
+
+                if nxt in chain or nxt in visited:
+                    break
+
+                chain.append(nxt)
+                curr = nxt
+
+                if len(chain) > 10:
+                    break
+
+            # Must meet hop requirement
             if len(chain) < CONFIG["SHELL_MIN_HOPS"]:
+                continue
+
+            # STRICT FRAUD CONDITION:
+            # Intermediate nodes must have 2–3 total transactions
+            valid = True
+
+            for mid in chain[1:-1]:
+                if tx_counts[mid] < 2 or tx_counts[mid] > 3:
+                    valid = False
+                    break
+
+            if not valid:
                 continue
 
             rid = self._next_rid("SHELL")
@@ -302,8 +288,14 @@ class RiftAnalyzer:
             })
 
             for acc in chain:
-                self._update_account(acc, score, f"layered_shell_hops_{len(chain)}", rid)
-                visited.add(acc)
+                self._update_account(
+                    acc,
+                    score,
+                    f"layered_shell_hops_{len(chain)}",
+                    rid
+                )
+
+            visited.update(chain)
 
     # ─────────────────────────────────────────────
     # OUTPUT

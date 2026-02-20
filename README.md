@@ -279,9 +279,9 @@ python data/generate_test_data.py
 
 ## Team Members
 
-| Name | Role |
+| Name | 
 |---|---|
-| **Daksha Adhikari** | Backend / Graph Algorithms |
-| **Sai Sharan** | Backend / Data Pipeline |
-| **Aaron Fernandes** | Frontend / Visualisation |
-| **Vijval Gupta** | Frontend / UI & Integration |
+| **Daksha Adhikari** | 
+| **Sai Sharan** |
+| **Aaron Fernandes** |
+| **Vijval Gupta** | 
