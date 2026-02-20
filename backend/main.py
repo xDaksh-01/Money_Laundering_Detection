@@ -49,29 +49,3 @@ if _DIST.is_dir():
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         return FileResponse(str(_DIST / "index.html"))
-
-
-# ---------------------------------------------------
-# FRONTEND STATIC SERVING (Vite dist build)
-# ---------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FRONTEND_DIST = os.path.join(BASE_DIR, "frontend", "dist")
-
-if os.path.exists(FRONTEND_DIST):
-
-    # Serve Vite assets
-    app.mount(
-        "/assets",
-        StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")),
-        name="assets"
-    )
-
-    # Serve root index.html
-    @app.get("/", include_in_schema=False)
-    async def serve_root():
-        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
-
-    # Catch-all route for SPA routing
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_spa(full_path: str):
-        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
