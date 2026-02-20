@@ -817,7 +817,7 @@ export default function App() {
 
           {/* ── Analytics ── */}
           {active === 'analytics' && (
-            <AnalyticsView data={transactionsData} />
+            <AnalyticsView data={transactionsData} uploadedFileName={uploadedFileName} />
           )}
 
         </div>

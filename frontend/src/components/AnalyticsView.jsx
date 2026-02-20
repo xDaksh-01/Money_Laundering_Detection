@@ -163,58 +163,92 @@ function VBarChart({ bars, height = 110, unitLabel = '' }) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   LINE / AREA CHART (pure SVG)
+   LINE / AREA CHART (pure SVG) — proper axes
 ══════════════════════════════════════════════════════════════ */
-function LineChart({ points, width = 400, height = 110, color = '#00E5FF', label = '' }) {
+function LineChart({ points, width = 500, height = 150, color = '#00E5FF', yLabel = '', formatY = v => v }) {
   if (!points.length) return <p style={{ fontSize: 12, color: 'var(--t3)' }}>No data</p>;
   const maxY = Math.max(...points.map(p => p.y), 1);
-  const minY = 0;
-  const pad = { t: 10, b: 24, l: 36, r: 10 };
-  const w = width - pad.l - pad.r;
-  const h = height - pad.t - pad.b;
+  const minY = Math.min(...points.map(p => p.y), 0);
+  const range = maxY - minY || 1;
+  // Smarter padding: more bottom room for rotated labels when many points
+  const manyPoints = points.length > 12;
+  const pad = { t: 14, b: manyPoints ? 54 : 30, l: 44, r: 14 };
+  const W = width - pad.l - pad.r;
+  const H = height - pad.t - pad.b;
 
-  function sx(i) { return pad.l + (i / (points.length - 1 || 1)) * w; }
-  function sy(y) { return pad.t + h - ((y - minY) / (maxY - minY || 1)) * h; }
+  function sx(i) { return pad.l + (i / Math.max(points.length - 1, 1)) * W; }
+  function sy(y) { return pad.t + H - ((y - minY) / range) * H; }
 
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${sx(i)},${sy(p.y)}`).join(' ');
-  const areaPath = `${linePath} L${sx(points.length - 1)},${pad.t + h} L${pad.l},${pad.t + h} Z`;
+  // 4 y-axis ticks spaced evenly
+  const yTickCount = 4;
+  const yTicks = Array.from({ length: yTickCount + 1 }, (_, i) =>
+    minY + (range / yTickCount) * i
+  );
 
-  // Y-axis tick labels (3 ticks)
-  const yTicks = [0, Math.round(maxY / 2), maxY];
+  // X-axis: show at most 10 labels evenly spaced
+  const xStep = points.length <= 10 ? 1 : Math.ceil(points.length / 10);
+  const xLabelIndices = points.map((_, i) => i).filter(i => i % xStep === 0 || i === points.length - 1);
+
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${sx(i).toFixed(1)},${sy(p.y).toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L${sx(points.length - 1).toFixed(1)},${(pad.t + H).toFixed(1)} L${pad.l},${(pad.t + H).toFixed(1)} Z`;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ height, display: 'block' }}>
-      {/* Grid lines */}
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ height, display: 'block', overflow: 'visible' }}>
+      {/* Y grid lines + labels */}
       {yTicks.map((v, i) => (
         <g key={i}>
-          <line x1={pad.l} y1={sy(v)} x2={pad.l + w} y2={sy(v)}
-            stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
-          <text x={pad.l - 4} y={sy(v) + 4} textAnchor="end"
-            fill="rgba(255,255,255,0.3)" fontSize={8} fontFamily="monospace">
-            {v}
+          <line x1={pad.l} y1={sy(v)} x2={pad.l + W} y2={sy(v)}
+            stroke={i === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)'}
+            strokeWidth={i === 0 ? 1.5 : 1} strokeDasharray={i === 0 ? undefined : '3,4'} />
+          <text x={pad.l - 6} y={sy(v) + 3.5} textAnchor="end"
+            fill="rgba(255,255,255,0.45)" fontSize={8.5} fontFamily="monospace" fontWeight="600">
+            {formatY(Math.round(v * 10) / 10)}
           </text>
         </g>
       ))}
+      {/* Y axis border */}
+      <line x1={pad.l} y1={pad.t} x2={pad.l} y2={pad.t + H}
+        stroke="rgba(255,255,255,0.2)" strokeWidth={1.5} />
       {/* Area fill */}
-      <path d={areaPath} fill={`${color}18`} />
+      <defs>
+        <linearGradient id={`ag_${color.replace('#','')}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={`url(#ag_${color.replace('#','')})`} />
       {/* Line */}
-      <path d={linePath} fill="none" stroke={color} strokeWidth={2}
+      <path d={linePath} fill="none" stroke={color} strokeWidth={2.2}
         strokeLinejoin="round" strokeLinecap="round" />
-      {/* Dots */}
-      {points.map((p, i) => (
-        <circle key={i} cx={sx(i)} cy={sy(p.y)} r={3}
-          fill={color} stroke="rgba(8,8,15,0.9)" strokeWidth={1.5} />
+      {/* Dots — only if ≤ 30 points */}
+      {points.length <= 30 && points.map((p, i) => (
+        <circle key={i} cx={sx(i)} cy={sy(p.y)} r={2.8}
+          fill={color} stroke="rgba(8,8,15,0.95)" strokeWidth={1.5} />
       ))}
-      {/* X-axis labels (max 8 shown) */}
-      {points.filter((_, i) => points.length <= 8 || i % Math.ceil(points.length / 8) === 0).map((p, i, arr) => {
-        const origIdx = points.indexOf(p);
-        return (
-          <text key={i} x={sx(origIdx)} y={height - 4} textAnchor="middle"
-            fill="rgba(255,255,255,0.35)" fontSize={7.5} fontFamily="monospace">
-            {p.label}
-          </text>
-        );
-      })}
+      {/* X-axis tick marks + labels */}
+      {xLabelIndices.map(i => (
+        <g key={i}>
+          <line x1={sx(i)} y1={pad.t + H} x2={sx(i)} y2={pad.t + H + 4}
+            stroke="rgba(255,255,255,0.25)" strokeWidth={1} />
+          {manyPoints ? (
+            <text
+              x={sx(i)} y={pad.t + H + 8}
+              textAnchor="end"
+              fill="rgba(255,255,255,0.45)" fontSize={8} fontFamily="monospace"
+              transform={`rotate(-45, ${sx(i)}, ${pad.t + H + 8})`}>
+              {points[i].label}
+            </text>
+          ) : (
+            <text x={sx(i)} y={pad.t + H + 14} textAnchor="middle"
+              fill="rgba(255,255,255,0.45)" fontSize={8.5} fontFamily="monospace">
+              {points[i].label}
+            </text>
+          )}
+        </g>
+      ))}
+      {/* X-axis base line */}
+      <line x1={pad.l} y1={pad.t + H} x2={pad.l + W} y2={pad.t + H}
+        stroke="rgba(255,255,255,0.18)" strokeWidth={1.5} />
     </svg>
   );
 }
@@ -234,7 +268,7 @@ function StatPill({ label, value, color }) {
 /* ══════════════════════════════════════════════════════════════
    MAIN ANALYTICS VIEW
 ══════════════════════════════════════════════════════════════ */
-export default function AnalyticsView({ data }) {
+export default function AnalyticsView({ data, uploadedFileName }) {
   const rings = data?.fraud_rings ?? [];
   const accounts = data?.suspicious_accounts ?? [];
   const summary = data?.summary;
@@ -347,14 +381,44 @@ export default function AnalyticsView({ data }) {
   const totalAccts = summary?.total_accounts_analyzed ?? 0;
   const suspAccts = summary?.suspicious_accounts_flagged ?? 0;
   const volTotal = derived.totalVolume;
-  const maxRiskBar = derived.riskBars[0]?.value ?? 100;
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+      {/* ── File header banner ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.2)',
+        borderRadius: 10, padding: '10px 16px',
+      }}>
+        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth={2} style={{ flexShrink: 0 }}>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14,2 14,8 20,8" />
+        </svg>
+        <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--cyan)', fontWeight: 700 }}>
+          {uploadedFileName ?? 'No file loaded'}
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--t3)', marginLeft: 4 }}>— currently analyzed dataset</span>
+        {volTotal > 0 && (
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 20 }}>
+            <div style={{ textAlign: 'right' }}>
+              <p style={{ fontSize: 9, color: 'var(--t3)', letterSpacing: '0.08em' }}>FLAGGED (ILLICIT)</p>
+              <p style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 800, color: 'var(--red)' }}>{fmt(volTotal)}</p>
+            </div>
+            <div style={{ width: 1, height: 30, background: 'var(--border)' }} />
+            <div style={{ textAlign: 'right' }}>
+              <p style={{ fontSize: 9, color: 'var(--t3)', letterSpacing: '0.08em' }}>FLAGGED ACCOUNTS</p>
+              <p style={{ fontFamily: 'monospace', fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>
+                {suspAccts.toLocaleString()} / {totalAccts.toLocaleString()}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* ── Top KPI strip ── */}
       <div style={{
-        display: 'flex', gap: 12,
+        display: 'flex', gap: 12, flexWrap: 'wrap',
         background: 'rgba(10,10,18,0.95)', border: '1px solid var(--border)',
         borderRadius: 12, padding: '14px 22px',
       }}>
@@ -368,7 +432,7 @@ export default function AnalyticsView({ data }) {
         <div style={{ width: 1, background: 'var(--border)', margin: '0 4px' }} />
         <StatPill label="HYBRID PATTERNS" value={derived.hybridCount} color="#c77dff" />
         <div style={{ width: 1, background: 'var(--border)', margin: '0 4px' }} />
-        <StatPill label="ILLICIT VOLUME" value={fmt(volTotal)} color="var(--red)" />
+        <StatPill label="FLAGGED VOLUME" value={fmt(volTotal)} color="var(--red)" />
         <div style={{ width: 1, background: 'var(--border)', margin: '0 4px' }} />
         <StatPill
           label="SUSPICION RATE"
@@ -427,24 +491,14 @@ export default function AnalyticsView({ data }) {
         )}
       </div>
 
-      {/* ── Row 2: risk score bars + histogram ── */}
+      {/* ── Row 2: risk score bars only ── */}
       <div style={{ display: 'flex', gap: 16 }}>
-
-        {/* H-BAR — Top rings by risk score */}
-        <Card title="Top Rings by Risk Score" subtitle="Highest-risk detected laundering chains" style={{ flex: 2 }}>
+        <Card title="Top Rings by Risk Score" subtitle="Highest-risk detected laundering chains" style={{ flex: 1 }}>
           {derived.riskBars.length > 0 ? (
             <HBarChart bars={derived.riskBars} maxVal={100} unitLabel="" />
           ) : (
             <p style={{ fontSize: 12, color: 'var(--t3)' }}>No rings detected yet</p>
           )}
-        </Card>
-
-        {/* V-BAR — Suspicion score histogram */}
-        <Card title="Suspicion Score Distribution" subtitle="How many accounts fall in each risk bucket" style={{ flex: 1 }}>
-          <VBarChart bars={derived.histogram} height={120} />
-          <p style={{ fontSize: 10, color: 'var(--t3)', textAlign: 'center', fontFamily: 'monospace' }}>
-            Score bands: Low → Medium → High → Critical
-          </p>
         </Card>
       </div>
 
@@ -452,9 +506,9 @@ export default function AnalyticsView({ data }) {
       <div style={{ display: 'flex', gap: 16 }}>
 
         {/* LINE — Ring size progression */}
-        <Card title="Ring Size Curve" subtitle="Number of member accounts per ring (sorted ascending)" style={{ flex: 1 }}>
+        <Card title="Ring Size Curve" subtitle="Member count per ring — sorted ascending (X = ring, Y = members)" style={{ flex: 1 }}>
           {derived.sizePoints.length >= 2 ? (
-            <LineChart points={derived.sizePoints} width={500} height={130} color="#00E5FF" />
+            <LineChart points={derived.sizePoints} width={500} height={160} color="#00E5FF" yLabel="members" formatY={v => `${v}`} />
           ) : derived.sizePoints.length === 1 ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0' }}>
               <span style={{ fontSize: 10, color: 'var(--t3)' }}>Single ring detected:</span>
@@ -487,9 +541,9 @@ export default function AnalyticsView({ data }) {
         </Card>
 
         {/* LINE — Risk score across rings */}
-        <Card title="Risk Score Timeline" subtitle="Risk score per detected ring (in detection order)" style={{ flex: 1 }}>
+        <Card title="Risk Score Timeline" subtitle="Risk score per ring in detection order (X = ring index, Y = score 0–100)" style={{ flex: 1 }}>
           {derived.riskLine.length >= 2 ? (
-            <LineChart points={derived.riskLine} width={500} height={130} color="#FF4D6D" />
+            <LineChart points={derived.riskLine} width={500} height={160} color="#FF4D6D" yLabel="score" formatY={v => `${v}`} />
           ) : derived.riskLine.length === 1 ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0' }}>
               <span style={{ fontSize: 10, color: 'var(--t3)' }}>Single ring, risk:</span>
