@@ -48,7 +48,8 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await axios.post('http://127.0.0.1:8000/api/process', fd, {
+      const base = import.meta.env.VITE_API_URL ?? '';
+      const res = await axios.post(`${base}/api/process`, fd, {
         timeout: 120000, // 2 min — graph analysis on 10k rows can take a moment
       });
       onSuccess(res.data);

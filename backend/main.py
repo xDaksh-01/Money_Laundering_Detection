@@ -10,6 +10,9 @@ import os
 
 app = FastAPI(title="RIFT 2026 Detection Engine")
 
+# ---------------------------------------------------
+# CORS (safe for demo / hackathon)
+# ---------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,9 +22,9 @@ app.add_middleware(
 
 parser = RIFTDataParser()
 
-# ------------------------------
+# ---------------------------------------------------
 # API ROUTE
-# ------------------------------
+# ---------------------------------------------------
 @app.post("/api/process", response_model=RiftOutput)
 async def process_data(file: UploadFile = File(...)):
     content = await file.read()
@@ -36,20 +39,27 @@ async def process_data(file: UploadFile = File(...)):
     return results
 
 
-# ------------------------------
-# STATIC FRONTEND SERVING
-# ------------------------------
+# ---------------------------------------------------
+# FRONTEND STATIC SERVING (Vite dist build)
+# ---------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIST = os.path.join(BASE_DIR, "frontend", "dist")
 
 if os.path.exists(FRONTEND_DIST):
 
+    # Serve Vite assets
     app.mount(
         "/assets",
         StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")),
         name="assets"
     )
 
-    @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
+    # Serve root index.html
+    @app.get("/", include_in_schema=False)
+    async def serve_root():
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+
+    # Catch-all route for SPA routing
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
