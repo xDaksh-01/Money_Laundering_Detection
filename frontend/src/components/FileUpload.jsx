@@ -45,12 +45,20 @@ export default function FileUpload({ onSuccess, isLoading, setIsLoading, setErro
     setFileName(file.name);
     setError(null);
     setIsLoading(true);
+
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await axios.post('http://127.0.0.1:8000/api/process', fd, {
-        timeout: 120000, // 2 min — graph analysis on 10k rows can take a moment
-      });
+
+      // ✅ FIXED — using your Cloudflare tunnel backend
+      const res = await axios.post(
+        'https://qualify-bike-leaders-evans.trycloudflare.com/api/process',
+        fd,
+        {
+          timeout: 120000, // 2 min
+        }
+      );
+
       onSuccess(res.data);
     } catch (e) {
       setError(e.response?.data?.detail || e.message || 'Upload failed. Is the backend running?');
