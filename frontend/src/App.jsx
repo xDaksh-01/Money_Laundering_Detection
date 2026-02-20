@@ -582,6 +582,7 @@ export default function App() {
                 <ChainDetailPanel
                   ring={selectedRing}
                   suspiciousAccounts={transactionsData?.suspicious_accounts}
+                  fraudRings={transactionsData?.fraud_rings}
                   summary={transactionsData?.summary}
                   onClose={() => setSelectedRing(null)}
                 />
