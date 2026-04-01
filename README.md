@@ -1,4 +1,4 @@
-# RIFT — Real-time Intelligence for Financial Transactions
+ Real-time Intelligence for Financial Transactions
 
 > **AI-powered money laundering detection engine** that ingests raw transaction CSVs, builds a directed transaction graph, and runs a four-pass algorithm to surface fraud rings, suspicious accounts, and layered shell networks — all visualised in an interactive network graph.
 
