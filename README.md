@@ -17,7 +17,7 @@
 5. [Installation & Setup](#installation--setup)
 6. [Usage Instructions](#usage-instructions)
 7. [Known Limitations](#known-limitations)
-8. [Team Members](#team-members)
+
 
 ---
 
@@ -277,11 +277,4 @@ python data/generate_test_data.py
 
 ---
 
-## Team Members
 
-| Name | 
-|---|---|
-| **Daksha Adhikari** | 
-| **Sai Sharan** |
-| **Aaron Fernandes** |
-| **Vijval Gupta** | 
